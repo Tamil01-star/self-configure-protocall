@@ -21,52 +21,52 @@ export const AnalyzerConsole: React.FC<AnalyzerConsoleProps> = ({ logs, onClearL
   const allLogs = [...logs, ...customLogs];
 
   return (
-    <div className="instrument-card p-4 font-mono text-xs flex flex-col h-full bg-instrument-bg border-instrument-border">
-      <div className="flex items-center justify-between border-b border-instrument-border pb-2 mb-3">
+    <div className="instrument-card p-4 font-mono text-xs flex flex-col h-full bg-white border border-slate-200">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
         <div className="flex items-center space-x-2">
-          <Terminal className="w-4 h-4 text-instrument-green" />
-          <span className="text-xs font-bold text-instrument-textBright uppercase">
+          <Terminal className="w-4 h-4 text-emerald-600" />
+          <span className="text-xs font-bold text-slate-900 uppercase">
             AUTOSCOPE INSTRUMENT COMMAND CONSOLE
           </span>
         </div>
         <button
           onClick={() => { onClearLogs(); setCustomLogs([]); }}
-          className="text-instrument-textMuted hover:text-instrument-red transition-all p-1"
+          className="text-slate-400 hover:text-red-600 transition-all p-1"
           title="Clear Console Output"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="flex-1 bg-black/80 p-3 rounded border border-instrument-border overflow-y-auto space-y-1 text-[11px] max-h-[220px]">
-        <div className="text-instrument-cyan font-bold">[AUTOSCOPE KERNEL v2.4 initialized]</div>
+      <div className="flex-1 bg-slate-900 p-3 rounded border border-slate-800 overflow-y-auto space-y-1 text-[11px] max-h-[220px]">
+        <div className="text-sky-400 font-bold">[AUTOSCOPE KERNEL v2.4 initialized]</div>
         {allLogs.map((line, idx) => (
-          <div key={idx} className="text-instrument-textBright leading-relaxed">
+          <div key={idx} className="text-slate-100 leading-relaxed font-mono">
             {line.startsWith('>') ? (
-              <span className="text-instrument-cyan font-bold">{line}</span>
+              <span className="text-sky-300 font-bold">{line}</span>
             ) : line.includes('PASS') || line.includes('complete') || line.includes('OK') ? (
-              <span className="text-instrument-green">{line}</span>
+              <span className="text-emerald-400 font-semibold">{line}</span>
             ) : line.includes('WARN') || line.includes('FAULT') ? (
-              <span className="text-instrument-amber">{line}</span>
+              <span className="text-amber-400 font-semibold">{line}</span>
             ) : (
-              <span className="text-instrument-textSubtle">{line}</span>
+              <span className="text-slate-300">{line}</span>
             )}
           </div>
         ))}
       </div>
 
       <form onSubmit={handleSendCommand} className="mt-3 flex items-center space-x-2">
-        <span className="text-instrument-cyan font-bold">&gt;</span>
+        <span className="text-sky-600 font-bold">&gt;</span>
         <input
           type="text"
           placeholder="Type command (e.g. set baud 115200, trigger edge ch1)..."
           value={commandInput}
           onChange={(e) => setCommandInput(e.target.value)}
-          className="flex-1 bg-instrument-panel px-3 py-1.5 rounded border border-instrument-border text-instrument-textBright focus:border-instrument-cyan focus:outline-none text-xs"
+          className="flex-1 bg-slate-50 px-3 py-1.5 rounded border border-slate-200 text-slate-900 focus:border-sky-600 focus:outline-none text-xs font-medium"
         />
         <button
           type="submit"
-          className="px-3 py-1.5 bg-instrument-cyan text-black font-bold rounded text-xs hover:bg-cyan-300 transition-all"
+          className="px-3 py-1.5 bg-sky-600 text-white font-bold rounded text-xs hover:bg-sky-700 transition-all shadow-sm"
         >
           <Send className="w-3.5 h-3.5" />
         </button>

@@ -37,7 +37,7 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
   });
   const [showTrigger, setShowTrigger] = useState<boolean>(true);
 
-  // Canvas Rendering Effect
+  // Canvas Rendering Effect for Light Theme Laboratory Oscilloscope
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -56,17 +56,17 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         canvas.height = height;
       }
 
-      // Background
-      ctx.fillStyle = '#080b11';
+      // Crisp White Instrument Background
+      ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, width, height);
 
       // Fine Oscilloscope Grid (Horizontal & Vertical)
       const gridSpacing = 40 * zoomLevel;
-      ctx.strokeStyle = '#131e2e';
+      ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 1;
 
       // Vertical grid lines with microsecond time labels
-      ctx.fillStyle = '#475569';
+      ctx.fillStyle = '#64748b';
       ctx.font = '10px monospace';
       
       const timeStepUs = (20 / zoomLevel);
@@ -100,6 +100,14 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         timeShift += 2.5;
       }
 
+      // Channel Light Color Map Override for maximum contrast on white
+      const lightChannelColors: Record<string, string> = {
+        CH1: '#0284c7', // Sky Blue
+        CH2: '#059669', // Emerald Green
+        CH3: '#d97706', // Amber
+        CH4: '#7c3aed', // Purple
+      };
+
       enabledChannels.forEach((channel, idx) => {
         const laneTop = 20 + idx * laneHeight;
         const laneBottom = laneTop + laneHeight - 15;
@@ -107,22 +115,22 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         const signalLowY = laneBottom;
 
         // Baseline reference line
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
         ctx.beginPath();
         ctx.moveTo(0, signalLowY);
         ctx.lineTo(width, signalLowY);
         ctx.stroke();
 
+        const strokeColor = lightChannelColors[channel.id] || channel.color || '#0284c7';
+
         // Channel Label & Voltage scale tag
-        ctx.fillStyle = channel.color;
+        ctx.fillStyle = strokeColor;
         ctx.font = 'bold 11px monospace';
         ctx.fillText(`${channel.id} (${channel.name}) - ${channel.highVoltage.toFixed(1)}V`, 10, laneTop + 6);
 
-        // Generate synthetic digital square wave pulse data
-        ctx.strokeStyle = channel.color;
-        ctx.lineWidth = 2;
-        ctx.shadowColor = channel.color;
-        ctx.shadowBlur = 4;
+        // Draw Digital Waveform Traces
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
 
         const bits = channel.digitalData.length > 0 
@@ -141,7 +149,7 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
           const nextX = currentX + bitWidthPx;
 
           if (state !== lastState) {
-            // Vertical edge transition (square wave edge)
+            // Vertical edge transition
             ctx.lineTo(currentX, state === 1 ? signalHighY : signalLowY);
           }
           // Horizontal level line
@@ -152,13 +160,12 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
           if (currentX > width) break;
         }
         ctx.stroke();
-        ctx.shadowBlur = 0; // reset shadow
       });
 
       // Trigger Line Indicator
       if (showTrigger) {
         const triggerX = 140;
-        ctx.strokeStyle = '#ef4444';
+        ctx.strokeStyle = '#dc2626';
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
         ctx.moveTo(triggerX, 0);
@@ -167,7 +174,7 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         ctx.setLineDash([]);
 
         // Trigger Marker Arrow
-        ctx.fillStyle = '#ef4444';
+        ctx.fillStyle = '#dc2626';
         ctx.font = 'bold 10px monospace';
         ctx.fillText('T 0.0μs', triggerX + 4, 14);
       }
@@ -189,17 +196,17 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
   };
 
   return (
-    <div className="instrument-card flex flex-col h-full select-none overflow-hidden">
+    <div className="instrument-card flex flex-col h-full select-none overflow-hidden bg-white border border-slate-200 shadow-sm">
       {/* Waveform Viewer Header Bar */}
       <div className="instrument-card-header px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-1.5">
-            <Activity className="w-4 h-4 text-instrument-cyan" />
-            <span className="text-xs font-mono font-bold text-instrument-textBright uppercase">
+            <Activity className="w-4 h-4 text-sky-600" />
+            <span className="text-xs font-mono font-bold text-slate-900 uppercase">
               OSCILLOSCOPE WAVEFORM VIEW
             </span>
           </div>
-          <span className="px-2 py-0.5 bg-instrument-bg text-[10px] font-mono text-instrument-cyan rounded border border-instrument-border">
+          <span className="px-2 py-0.5 bg-sky-50 text-[10px] font-mono text-sky-700 rounded border border-sky-200 font-semibold">
             {protocol === 'I2C' ? '2 CHANNELS (SCL / SDA)' : protocol === 'SPI' ? '4 CHANNELS (SPI BUS)' : 'CH1 TX (UART TTL)'}
           </span>
         </div>
@@ -207,18 +214,18 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         {/* Toolbar Controls */}
         <div className="flex items-center space-x-2">
           {/* Zoom Buttons */}
-          <div className="flex items-center bg-instrument-bg rounded border border-instrument-border p-0.5 text-xs font-mono">
+          <div className="flex items-center bg-slate-100 rounded border border-slate-200 p-0.5 text-xs font-mono">
             <button 
               onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.25))}
-              className="p-1 text-instrument-textMuted hover:text-white"
+              className="p-1 text-slate-600 hover:text-slate-900"
               title="Zoom Out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="px-2 text-instrument-cyan font-bold">{zoomLevel.toFixed(2)}x</span>
+            <span className="px-2 text-sky-700 font-bold">{zoomLevel.toFixed(2)}x</span>
             <button 
               onClick={() => setZoomLevel(z => Math.min(4, z + 0.25))}
-              className="p-1 text-instrument-textMuted hover:text-white"
+              className="p-1 text-slate-600 hover:text-slate-900"
               title="Zoom In"
             >
               <ZoomIn className="w-3.5 h-3.5" />
@@ -227,17 +234,17 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
 
           <button
             onClick={() => { setZoomLevel(1); }}
-            className="px-2 py-1 bg-instrument-bg text-instrument-textSubtle hover:text-white rounded border border-instrument-border text-[11px] font-mono flex items-center gap-1"
+            className="px-2 py-1 bg-slate-100 text-slate-700 hover:text-slate-900 hover:bg-slate-200 rounded border border-slate-200 text-[11px] font-mono flex items-center gap-1 font-semibold"
           >
             <Maximize2 className="w-3 h-3" /> AUTO SCALE
           </button>
 
           <button
             onClick={onTogglePause}
-            className={`px-2.5 py-1 rounded text-[11px] font-mono font-semibold flex items-center gap-1.5 border transition-all ${
+            className={`px-2.5 py-1 rounded text-[11px] font-mono font-bold flex items-center gap-1.5 border transition-all ${
               captureState === 'CAPTURING'
-                ? 'bg-instrument-amberDim text-instrument-amber border-instrument-amber/40 hover:bg-instrument-amber hover:text-black'
-                : 'bg-instrument-cyan text-black border-instrument-cyan hover:bg-cyan-300'
+                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-600 hover:text-white'
+                : 'bg-sky-600 text-white border-sky-600 hover:bg-sky-700'
             }`}
           >
             {captureState === 'CAPTURING' ? (
@@ -253,8 +260,8 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
 
           <button
             onClick={() => setShowTrigger(t => !t)}
-            className={`px-2 py-1 rounded text-[11px] font-mono border flex items-center gap-1 ${
-              showTrigger ? 'bg-instrument-redDim text-instrument-red border-instrument-red/40' : 'bg-instrument-bg text-instrument-textMuted border-instrument-border'
+            className={`px-2 py-1 rounded text-[11px] font-mono border flex items-center gap-1 font-semibold ${
+              showTrigger ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-100 text-slate-600 border-slate-200'
             }`}
           >
             <Crosshair className="w-3 h-3" /> TRIGGER
@@ -263,45 +270,51 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
       </div>
 
       {/* Main Waveform Canvas Box */}
-      <div className="relative flex-1 bg-instrument-bg min-h-[260px] w-full overflow-hidden">
+      <div className="relative flex-1 bg-white min-h-[260px] w-full overflow-hidden">
         <canvas ref={canvasRef} className="w-full h-full block cursor-crosshair" />
-
-        {/* Scanline subtle overlay */}
         <div className="absolute inset-0 scanline-overlay pointer-events-none" />
       </div>
 
       {/* Bottom Channel Toggles Strip */}
-      <div className="bg-instrument-panel px-4 py-2 border-t border-instrument-border flex items-center justify-between">
+      <div className="bg-slate-50 px-4 py-2 border-t border-slate-200 flex items-center justify-between">
         <div className="flex items-center space-x-3 text-xs font-mono">
-          <span className="text-instrument-textMuted flex items-center gap-1">
-            <Sliders className="w-3.5 h-3.5 text-instrument-cyan" /> CHANNELS:
+          <span className="text-slate-500 font-semibold flex items-center gap-1">
+            <Sliders className="w-3.5 h-3.5 text-sky-600" /> CHANNELS:
           </span>
           {channels.map((ch) => {
             const isVisible = activeChannels[ch.id] !== false && ch.enabled;
+            const badgeColorMap: Record<string, string> = {
+              CH1: '#0284c7',
+              CH2: '#059669',
+              CH3: '#d97706',
+              CH4: '#7c3aed',
+            };
+            const dotColor = badgeColorMap[ch.id] || ch.color;
+
             return (
               <button
                 key={ch.id}
                 onClick={() => toggleChannel(ch.id)}
                 className={`px-2.5 py-1 rounded border flex items-center space-x-1.5 transition-all ${
                   isVisible
-                    ? 'bg-instrument-bg text-white border-instrument-borderHighlight shadow-sm'
-                    : 'bg-instrument-bg/40 text-instrument-textMuted border-transparent opacity-50'
+                    ? 'bg-white text-slate-900 border-slate-300 shadow-sm font-bold'
+                    : 'bg-slate-100 text-slate-400 border-transparent opacity-60'
                 }`}
               >
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ch.color }} />
-                <span className="font-bold">{ch.id}</span>
-                <span className="text-[10px] text-instrument-textMuted">({ch.name})</span>
-                {isVisible ? <Eye className="w-3 h-3 text-instrument-cyan" /> : <EyeOff className="w-3 h-3" />}
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                <span>{ch.id}</span>
+                <span className="text-[10px] text-slate-400 font-normal">({ch.name})</span>
+                {isVisible ? <Eye className="w-3 h-3 text-sky-600" /> : <EyeOff className="w-3 h-3" />}
               </button>
             );
           })}
         </div>
 
         {/* Timestamp & Time division readouts */}
-        <div className="text-[11px] font-mono text-instrument-textMuted flex items-center space-x-3">
-          <span>Time/Div: <strong className="text-instrument-cyan">{(20 / zoomLevel).toFixed(0)} μs</strong></span>
-          <span>Sampling: <strong className="text-instrument-textBright">2 MS/s</strong></span>
-          <span>Buffer: <strong className="text-instrument-textBright">64 KB</strong></span>
+        <div className="text-[11px] font-mono text-slate-500 flex items-center space-x-3 font-medium">
+          <span>Time/Div: <strong className="text-sky-700 font-bold">{(20 / zoomLevel).toFixed(0)} μs</strong></span>
+          <span>Sampling: <strong className="text-slate-900 font-bold">2 MS/s</strong></span>
+          <span>Buffer: <strong className="text-slate-900 font-bold">64 KB</strong></span>
         </div>
       </div>
     </div>

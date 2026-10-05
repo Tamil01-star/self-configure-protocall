@@ -18,15 +18,15 @@ export const CaptureControls: React.FC<CaptureControlsProps> = ({
   onAutoDetect,
 }) => {
   return (
-    <div className="instrument-card p-3 flex flex-wrap items-center justify-between gap-3 font-mono text-xs">
+    <div className="instrument-card p-3 flex flex-wrap items-center justify-between gap-3 font-mono text-xs bg-white border border-slate-200 shadow-sm">
       {/* Buttons */}
       <div className="flex items-center space-x-2">
         <button
           onClick={onStart}
-          className={`px-3 py-1.5 rounded font-bold flex items-center gap-1.5 transition-all ${
+          className={`px-3 py-1.5 rounded font-bold flex items-center gap-1.5 transition-all shadow-sm ${
             captureState === 'CAPTURING'
-              ? 'bg-instrument-green text-black shadow-green-glow'
-              : 'bg-instrument-bg text-instrument-green border border-instrument-green/40 hover:bg-instrument-green hover:text-black'
+              ? 'bg-emerald-600 text-white'
+              : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-600 hover:text-white'
           }`}
         >
           <Play className="w-3.5 h-3.5 fill-current" /> START
@@ -34,17 +34,17 @@ export const CaptureControls: React.FC<CaptureControlsProps> = ({
 
         <button
           onClick={onStop}
-          className="px-3 py-1.5 bg-instrument-bg text-instrument-red border border-instrument-red/40 hover:bg-instrument-red hover:text-white rounded font-bold flex items-center gap-1.5 transition-all"
+          className="px-3 py-1.5 bg-white text-red-700 border border-red-300 hover:bg-red-600 hover:text-white rounded font-bold flex items-center gap-1.5 transition-all shadow-sm"
         >
           <Square className="w-3.5 h-3.5 fill-current" /> STOP
         </button>
 
         <button
           onClick={onPause}
-          className={`px-3 py-1.5 rounded font-bold flex items-center gap-1.5 transition-all ${
+          className={`px-3 py-1.5 rounded font-bold flex items-center gap-1.5 transition-all shadow-sm ${
             captureState === 'PAUSED'
-              ? 'bg-instrument-amber text-black'
-              : 'bg-instrument-bg text-instrument-amber border border-instrument-amber/40 hover:bg-instrument-amber hover:text-black'
+              ? 'bg-amber-500 text-white'
+              : 'bg-white text-amber-700 border border-amber-300 hover:bg-amber-500 hover:text-white'
           }`}
         >
           <Pause className="w-3.5 h-3.5" /> PAUSE
@@ -52,21 +52,21 @@ export const CaptureControls: React.FC<CaptureControlsProps> = ({
 
         <button
           onClick={onAutoDetect}
-          className="px-3 py-1.5 bg-instrument-purple text-black font-bold rounded flex items-center gap-1.5 shadow-purple-glow hover:bg-purple-300 transition-all"
+          className="px-3 py-1.5 bg-purple-600 text-white font-bold rounded flex items-center gap-1.5 hover:bg-purple-700 transition-all shadow-sm"
         >
           <Sparkles className="w-3.5 h-3.5" /> AUTO DETECT
         </button>
       </div>
 
       {/* Hardware Parameter Badges */}
-      <div className="flex items-center space-x-3 text-[11px] text-instrument-textMuted bg-instrument-bg px-3 py-1.5 rounded border border-instrument-border">
-        <span>Sampling Rate: <strong className="text-instrument-cyan">2 MS/s</strong></span>
-        <span className="text-instrument-border">|</span>
-        <span>Buffer: <strong className="text-instrument-textBright">64 KB</strong></span>
-        <span className="text-instrument-border">|</span>
-        <span>Channels: <strong className="text-instrument-textBright">4</strong></span>
-        <span className="text-instrument-border">|</span>
-        <span>Capture: <strong className="text-instrument-green uppercase">{captureState}</strong></span>
+      <div className="flex items-center space-x-3 text-[11px] text-slate-500 bg-slate-50 px-3 py-1.5 rounded border border-slate-200 font-medium">
+        <span>Sampling Rate: <strong className="text-sky-700 font-bold">2 MS/s</strong></span>
+        <span className="text-slate-300">|</span>
+        <span>Buffer: <strong className="text-slate-900 font-bold">64 KB</strong></span>
+        <span className="text-slate-300">|</span>
+        <span>Channels: <strong className="text-slate-900 font-bold">4</strong></span>
+        <span className="text-slate-300">|</span>
+        <span>Capture: <strong className="text-emerald-600 font-bold uppercase">{captureState}</strong></span>
       </div>
     </div>
   );

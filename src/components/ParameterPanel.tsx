@@ -55,16 +55,16 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
   const paramsList = renderParameters();
 
   return (
-    <div className="instrument-card p-4">
-      <div className="flex items-center justify-between border-b border-instrument-border pb-2 mb-3">
+    <div className="instrument-card p-4 bg-white border border-slate-200">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
         <div className="flex items-center space-x-2">
-          <Sliders className="w-4 h-4 text-instrument-cyan" />
-          <span className="text-xs font-mono font-bold text-instrument-textBright uppercase">
+          <Sliders className="w-4 h-4 text-sky-600" />
+          <span className="text-xs font-mono font-bold text-slate-900 uppercase">
             AUTO-CONFIGURED PARAMETERS
           </span>
         </div>
-        <span className="text-[10px] font-mono text-instrument-textMuted flex items-center gap-1">
-          <Cpu className="w-3 h-3 text-instrument-cyan" /> {protocol} DECODER ACTIVE
+        <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1 font-semibold">
+          <Cpu className="w-3 h-3 text-sky-600" /> {protocol} DECODER ACTIVE
         </span>
       </div>
 
@@ -72,12 +72,12 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
         {paramsList.map((p, idx) => (
           <div
             key={idx}
-            className="p-2.5 bg-instrument-bg rounded border border-instrument-border font-mono hover:border-instrument-borderHighlight transition-all"
+            className="p-2.5 bg-slate-50 rounded border border-slate-200 font-mono hover:border-slate-300 transition-all"
           >
-            <span className="text-[10px] text-instrument-textMuted uppercase tracking-wider block mb-1">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1 font-semibold">
               {p.label}
             </span>
-            <span className="text-sm font-bold text-instrument-textBright block">
+            <span className="text-sm font-bold text-slate-900 block">
               {p.value}
             </span>
           </div>

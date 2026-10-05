@@ -20,15 +20,15 @@ export const DemoModePanel: React.FC<DemoModePanelProps> = ({
   ];
 
   return (
-    <div className="instrument-card p-3 bg-instrument-bg border-instrument-cyan/40 font-mono text-xs">
-      <div className="flex items-center justify-between border-b border-instrument-border pb-2 mb-2">
+    <div className="instrument-card p-3 bg-white border border-sky-200 font-mono text-xs shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-2">
         <div className="flex items-center space-x-2">
-          <Layers className="w-4 h-4 text-instrument-cyan" />
-          <span className="font-bold text-instrument-textBright uppercase">
+          <Layers className="w-4 h-4 text-sky-600" />
+          <span className="font-bold text-slate-900 uppercase">
             HACKATHON DEMO SIMULATION SUITE
           </span>
         </div>
-        <div className="px-2 py-0.5 bg-instrument-amberDim text-instrument-amber border border-instrument-amber/40 text-[10px] font-bold rounded flex items-center gap-1">
+        <div className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-300 text-[10px] font-bold rounded flex items-center gap-1">
           <AlertCircle className="w-3 h-3" /> DEMO / SIMULATION MODE
         </div>
       </div>
@@ -42,8 +42,8 @@ export const DemoModePanel: React.FC<DemoModePanelProps> = ({
               onClick={() => onSelectPreset(p.id)}
               className={`p-2 rounded border text-left transition-all ${
                 isActive
-                  ? 'bg-instrument-cyanDim border-instrument-cyan text-instrument-cyan font-bold shadow-cyan-glow'
-                  : 'bg-instrument-panel border-instrument-border text-instrument-textMuted hover:text-white hover:border-instrument-borderHighlight'
+                  ? 'bg-sky-50 border-sky-400 text-sky-800 font-bold shadow-sm'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
               <span className="text-[11px] block truncate">{p.label}</span>

@@ -8,27 +8,27 @@ export default {
     extend: {
       colors: {
         instrument: {
-          bg: '#080b11',
-          panel: '#0f1520',
-          panelHeader: '#141c2b',
-          border: '#1e293b',
-          borderHighlight: '#2d3e55',
-          grid: '#131e2e',
-          cyan: '#00f0ff',
-          cyanDim: 'rgba(0, 240, 255, 0.12)',
-          cyanGlow: 'rgba(0, 240, 255, 0.4)',
-          green: '#10b981',
-          greenDim: 'rgba(16, 185, 129, 0.12)',
-          amber: '#f59e0b',
-          amberDim: 'rgba(245, 158, 11, 0.12)',
-          red: '#ef4444',
-          redDim: 'rgba(239, 68, 68, 0.12)',
-          purple: '#a855f7',
-          purpleDim: 'rgba(168, 85, 247, 0.12)',
-          blue: '#3b82f6',
+          bg: '#f8fafc',
+          panel: '#ffffff',
+          panelHeader: '#f1f5f9',
+          border: '#e2e8f0',
+          borderHighlight: '#cbd5e1',
+          grid: '#e2e8f0',
+          cyan: '#0284c7', // Deep electric blue/cyan for high contrast in light mode
+          cyanDim: 'rgba(2, 132, 199, 0.12)',
+          cyanGlow: 'rgba(2, 132, 199, 0.3)',
+          green: '#059669', // Emerald green
+          greenDim: 'rgba(5, 150, 105, 0.12)',
+          amber: '#d97706', // Amber warning
+          amberDim: 'rgba(217, 119, 6, 0.12)',
+          red: '#dc2626', // High contrast red
+          redDim: 'rgba(220, 38, 38, 0.12)',
+          purple: '#7c3aed', // Purple analysis
+          purpleDim: 'rgba(124, 58, 237, 0.12)',
+          blue: '#2563eb',
           textMuted: '#64748b',
-          textSubtle: '#94a3b8',
-          textBright: '#f8fafc',
+          textSubtle: '#475569',
+          textBright: '#0f172a',
         }
       },
       fontFamily: {
@@ -36,8 +36,8 @@ export default {
         sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
       },
       boxShadow: {
-        'instrument': '0 4px 20px -2px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-        'cyan-glow': '0 0 15px rgba(0, 240, 255, 0.3)',
+        'instrument': '0 4px 12px -2px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
+        'cyan-glow': '0 0 12px rgba(2, 132, 199, 0.25)',
       }
     },
   },

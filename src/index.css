@@ -4,12 +4,12 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
   }
   
   body {
-    background-color: #080b11;
-    color: #cbd5e1;
+    background-color: #f8fafc;
+    color: #0f172a;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow-x: hidden;
     margin: 0;
@@ -18,80 +18,81 @@
   }
 }
 
-/* Custom Oscilloscope Grid Background */
+/* Custom Light Oscilloscope Grid Background */
 .bg-oscilloscope-grid {
   background-size: 40px 40px, 40px 40px, 10px 10px, 10px 10px;
   background-image: 
-    linear-gradient(to right, rgba(30, 58, 95, 0.25) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(30, 58, 95, 0.25) 1px, transparent 1px),
-    linear-gradient(to right, rgba(30, 58, 95, 0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(30, 58, 95, 0.08) 1px, transparent 1px);
+    linear-gradient(to right, rgba(2, 132, 199, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(2, 132, 199, 0.12) 1px, transparent 1px),
+    linear-gradient(to right, rgba(2, 132, 199, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(2, 132, 199, 0.04) 1px, transparent 1px);
 }
 
 .bg-dot-grid {
-  background-image: radial-gradient(rgba(0, 240, 255, 0.12) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(2, 132, 199, 0.12) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 
-/* Scanline overlay effect */
+/* Light Scanline overlay effect */
 .scanline-overlay {
   background: linear-gradient(
     to bottom,
     rgba(255,255,255,0),
     rgba(255,255,255,0) 50%,
-    rgba(0, 0, 0, 0.25) 50%,
-    rgba(0, 0, 0, 0.25)
+    rgba(226, 232, 240, 0.25) 50%,
+    rgba(226, 232, 240, 0.25)
   );
   background-size: 100% 4px;
   pointer-events: none;
 }
 
-/* Custom Scrollbars */
+/* Custom Light Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0f19;
+  background: #f1f5f9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #cbd5e1;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #00f0ff;
+  background: #0284c7;
 }
 
-/* Instrument glow effects */
+/* Instrument glow effects for light theme */
 .glow-cyan {
-  box-shadow: 0 0 10px rgba(0, 240, 255, 0.35);
+  box-shadow: 0 0 10px rgba(2, 132, 199, 0.25);
 }
 
 .glow-green {
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 10px rgba(5, 150, 105, 0.25);
 }
 
 .glow-amber {
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 10px rgba(217, 119, 6, 0.25);
 }
 
 .glow-red {
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.25);
 }
 
-/* Custom bevel border */
+/* Light instrument card styling */
 .instrument-card {
-  background: #0f1520;
-  border: 1px solid #1e293b;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 6px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
 }
 
 .instrument-card-header {
-  background: #141c2b;
-  border-bottom: 1px solid #1e293b;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 /* Instrument LED pulsing */
