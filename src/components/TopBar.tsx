@@ -122,7 +122,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           disabled={!isConnected}
           className={`px-2.5 py-1 rounded-sm font-bold flex items-center gap-1 transition-colors ${
             isConnected
-              ? 'bg-instrument-green text-black hover:bg-emerald-400'
+              ? 'bg-instrument-green text-white hover:bg-emerald-700'
               : 'bg-instrument-bg text-instrument-textMuted border border-instrument-border cursor-not-allowed opacity-50'
           }`}
         >

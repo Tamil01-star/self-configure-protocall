@@ -8,20 +8,20 @@ export default {
     extend: {
       colors: {
         instrument: {
-          bg: '#0b0e14',
-          panel: '#121720',
-          panelHeader: '#171e2b',
-          border: '#222c3d',
-          borderHighlight: '#2d3b52',
-          grid: '#1a2230',
-          blue: '#0ea5e9',
-          green: '#10b981',
-          amber: '#f59e0b',
-          red: '#ef4444',
-          purple: '#8b5cf6',
+          bg: '#f8fafc',
+          panel: '#ffffff',
+          panelHeader: '#f1f5f9',
+          border: '#cbd5e1',
+          borderHighlight: '#94a3b8',
+          grid: '#e2e8f0',
+          blue: '#0284c7',
+          green: '#16a34a',
+          amber: '#d97706',
+          red: '#dc2626',
+          purple: '#7c3aed',
           textMuted: '#64748b',
-          textSubtle: '#94a3b8',
-          textBright: '#f1f5f9',
+          textSubtle: '#475569',
+          textBright: '#0f172a',
         }
       },
       fontFamily: {

@@ -49,12 +49,12 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
     canvas.width = width;
     canvas.height = height;
 
-    // Dark graphite canvas background
-    ctx.fillStyle = '#0b0e14';
+    // Light instrument canvas background
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
 
-    // Fine grid
-    ctx.strokeStyle = '#1a2230';
+    // Fine grid (light slate lines)
+    ctx.strokeStyle = '#f1f5f9';
     ctx.lineWidth = 1;
     for (let x = 0; x < width; x += 32) {
       ctx.beginPath();
@@ -76,7 +76,7 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
       ctx.textAlign = 'center';
       if (!isConnected) {
         ctx.fillText('NO SERIAL CONNECTION — CONNECT ESP32 #2 ANALYZER', width / 2, height / 2 - 10);
-        ctx.fillStyle = '#475569';
+        ctx.fillStyle = '#94a3b8';
         ctx.font = '10px monospace';
         ctx.fillText('Plug ESP32 #2 USB cable and click [CONNECT SERIAL]', width / 2, height / 2 + 12);
       } else {
@@ -85,8 +85,8 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
       return;
     }
 
-    // Draw real digital channels
-    const channelColors = ['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6'];
+    // Draw real digital channels (light theme crisp colors)
+    const channelColors = ['#0284c7', '#16a34a', '#d97706', '#7c3aed'];
     const laneHeight = (height - 30) / 4;
 
     for (let idx = 0; idx < 4; idx++) {
@@ -97,7 +97,7 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
       const label = getChannelLabel(idx, ch);
 
       // Baseline reference
-      ctx.strokeStyle = '#222c3d';
+      ctx.strokeStyle = '#e2e8f0';
       ctx.beginPath();
       ctx.moveTo(80, signalLowY);
       ctx.lineTo(width, signalLowY);
@@ -154,7 +154,7 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         </div>
       </div>
 
-      <div className="relative flex-1 bg-instrument-bg min-h-[220px] w-full">
+      <div className="relative flex-1 bg-white min-h-[220px] w-full">
         <canvas ref={canvasRef} className="w-full h-full block" />
       </div>
     </div>
