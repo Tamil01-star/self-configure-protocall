@@ -36,7 +36,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const isConnected = hardwareStatus.esp32_2_connected;
 
   return (
-    <header className="bg-instrument-panel border-b border-instrument-border px-4 py-2 flex flex-wrap items-center justify-between gap-3 font-mono text-xs select-none">
+    <header className="bg-instrument-panel border-b border-instrument-border px-4 py-2 flex flex-wrap items-center justify-between gap-3 font-sans text-xs select-none">
       {/* Left Title & Branding */}
       <div className="flex items-center space-x-3">
         <div className="w-7 h-7 rounded-sm bg-instrument-bg flex items-center justify-center border border-instrument-borderHighlight text-instrument-blue">

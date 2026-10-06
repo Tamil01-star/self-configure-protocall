@@ -38,7 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="w-52 bg-instrument-panel border-r border-instrument-border flex flex-col justify-between select-none shrink-0 h-[calc(100vh-3.25rem)]">
       {/* Main Navigation Links */}
       <div className="py-2 px-2 space-y-1">
-        <div className="px-3 py-1.5 text-[10px] font-mono text-instrument-textMuted uppercase tracking-wider font-bold">
+        <div className="px-3 py-1.5 text-[10px] font-sans text-instrument-textMuted uppercase tracking-wider font-bold">
           MENU
         </div>
 
@@ -48,7 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => onSelectTab(item.id)}
-              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-sm text-xs font-mono transition-colors ${
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-sm text-xs font-sans transition-colors ${
                 isActive
                   ? 'bg-instrument-bg text-instrument-blue border border-instrument-borderHighlight font-bold shadow-sm'
                   : 'text-instrument-textSubtle hover:text-instrument-textBright hover:bg-instrument-bg border border-transparent'

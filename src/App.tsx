@@ -251,7 +251,7 @@ export function App() {
         />
 
         {/* Main Area */}
-        <main className="flex-1 overflow-y-auto p-4 space-y-4 max-w-[1920px] mx-auto w-full font-mono">
+        <main className="flex-1 overflow-y-auto p-4 space-y-4 max-w-[1920px] mx-auto w-full font-sans">
           {/* OFFLINE DISCONNECTED BANNER (State 1 requirement) */}
           {!hardwareStatus.esp32_2_connected && (
             <div className="instrument-card p-4 bg-instrument-bg border-instrument-red/40 flex flex-wrap items-center justify-between gap-3 shadow-sm">
