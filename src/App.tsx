@@ -1,186 +1,225 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { ProtocolStatus } from './components/ProtocolStatus';
 import { WaveformViewer } from './components/WaveformViewer';
-import { ProtocolConfidence } from './components/ProtocolConfidence';
 import { ParameterPanel } from './components/ParameterPanel';
-import { DecodedDataTable } from './components/DecodedDataTable';
 import { DetectionEvidence } from './components/DetectionEvidence';
+import { DecodedDataTable } from './components/DecodedDataTable';
 import { SignalHealth } from './components/SignalHealth';
+import { FaultDiagnosis } from './components/FaultDiagnosis';
 import { ChannelMap } from './components/ChannelMap';
+import { HardwareStackPanel } from './components/HardwareStackPanel';
+import { UnknownProtocolPanel } from './components/UnknownProtocolPanel';
 import { EventTimeline } from './components/EventTimeline';
 import { AnalyzerConsole } from './components/AnalyzerConsole';
-import { CaptureControls } from './components/CaptureControls';
-import { UnknownProtocolPanel } from './components/UnknownProtocolPanel';
-import { FaultDiagnosis } from './components/FaultDiagnosis';
-import { ConnectionStatus } from './components/ConnectionStatus';
-import { DemoModePanel } from './components/DemoModePanel';
 import { LandingIntro } from './components/LandingIntro';
-import { CaptureHistory } from './components/CaptureHistory';
 import { SettingsModal } from './components/SettingsModal';
 import { AutoDetectModal } from './components/AutoDetectModal';
-import { ElectricalLevelPanel } from './components/ElectricalLevelPanel';
+import { Usb, AlertCircle, Play, Square, Sparkles } from 'lucide-react';
 
 import type { 
   NavigationTab, 
-  DemoPreset, 
-  CaptureState, 
-  HardwareStatus, 
-  ProtocolType, 
-  TimelineEvent, 
-  SavedCapture 
+  SystemHardwareStatus, 
+  RealAnalyzerPayload 
 } from './types/analyzer';
-import { SerialSignalSource, WebSocketSignalSource } from './services/SignalSource';
-import { getPresetData } from './services/mockData';
+import { SerialHardwareDriver } from './services/SignalSource';
 
 export function App() {
   const [showLanding, setShowLanding] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<NavigationTab>('overview');
-  const [currentPreset, setCurrentPreset] = useState<DemoPreset>('UART_DEMO');
-  const [captureState, setCaptureState] = useState<CaptureState>('CAPTURING');
-  const [isAutoDetecting, setIsAutoDetecting] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isAutoDetecting, setIsAutoDetecting] = useState<boolean>(false);
 
-  // Payload data state
-  const [payload, setPayload] = useState(() => getPresetData('UART_DEMO'));
-  const [selectedProtocol, setSelectedProtocol] = useState<ProtocolType>('UART');
+  // Real Hardware Serial Driver instance
+  const driverRef = useRef<SerialHardwareDriver>(new SerialHardwareDriver());
 
-  // Console and timeline logs
-  const [consoleLogs, setConsoleLogs] = useState<string[]>([
-    '[AUTOSCOPE ENGINE] System initialization complete.',
-    '[DMA SAMPLER] Sampling rate set to 2 MS/s (4 channels).',
-    '[ANALYZER] Signal edge transition detected on CH1.',
-    '[AUTODETECT] Candidate UART TTL identified at 115200 baud.',
-    '[DECODER] Framed 15 bytes ASCII payload: "HELLO AUTOSCOPE"'
-  ]);
-
-  const [events, setEvents] = useState<TimelineEvent[]>([
-    { id: '1', timestampMs: 0.000, formattedTime: '00:00.000', message: 'Signal edge detected on CH1', type: 'info' },
-    { id: '2', timestampMs: 0.032, formattedTime: '00:00.032', message: 'UART candidate pattern identified', type: 'info' },
-    { id: '3', timestampMs: 0.044, formattedTime: '00:00.044', message: '115200 baud candidate confirmed', type: 'success' },
-    { id: '4', timestampMs: 0.051, formattedTime: '00:00.051', message: 'Decoder auto-configured (8N1)', type: 'success' },
-    { id: '5', timestampMs: 0.060, formattedTime: '00:00.060', message: 'Data stream successfully decoded', type: 'success' }
-  ]);
-
-  // Hardware status
-  const [hardwareStatus, setHardwareStatus] = useState<HardwareStatus>({
-    connected: true,
-    deviceName: 'ESP32 Capture Engine',
-    connectionType: 'SIMULATION',
-    samplingRate: '2 MS/s',
-    channelsAvailable: 4,
-    bufferKb: 64,
+  // Hardware Status State
+  const [hardwareStatus, setHardwareStatus] = useState<SystemHardwareStatus>({
+    esp32_1_status: 'UNKNOWN',
+    esp32_2_connected: false,
+    lcd_status: 'NOT VERIFIED',
+    laptop_status: 'RUNNING',
+    serialBaud: 115200,
   });
 
-  // Saved captures list
-  const [savedCaptures, setSavedCaptures] = useState<SavedCapture[]>([
-    { id: 'cap1', name: 'Capture #001', timestamp: '10:42:18', protocol: 'UART', baudOrFreq: '115200 baud', healthStatus: 'HEALTHY', healthScore: 94, dataCount: 15, notes: 'UART TTL serial log' },
-    { id: 'cap2', name: 'Capture #002', timestamp: '10:44:21', protocol: 'I2C', baudOrFreq: '100 kHz', healthStatus: 'HEALTHY', healthScore: 98, dataCount: 7, notes: 'I2C sensor read' },
-    { id: 'cap3', name: 'Capture #003', timestamp: '10:48:10', protocol: 'SPI', baudOrFreq: '1 MHz', healthStatus: 'HEALTHY', healthScore: 97, dataCount: 4, notes: 'SPI display stream' },
-    { id: 'cap4', name: 'Capture #004', timestamp: '10:52:05', protocol: 'UART', baudOrFreq: '115200 baud', healthStatus: 'WARNING', healthScore: 62, dataCount: 4, notes: 'Framing error fault' },
-  ]);
+  // Current Real Payload State from ESP32 #2
+  const [payload, setPayload] = useState<RealAnalyzerPayload>({
+    state: 'DISCONNECTED',
+    protocol: null,
+    confidence: null,
+    statusText: null,
+    evidence: [],
+    parameters: {},
+    channels: [],
+    decodedRows: [],
+    health: {
+      validFrames: null,
+      invalidFrames: null,
+      timingConsistencyPercent: null,
+      transitionConsistencyPercent: null,
+      clockConsistencyPercent: null,
+      errorCount: null,
+    },
+    lcdMessage: null,
+  });
 
-  // Switch presets reactively
-  const handleSelectPreset = useCallback((preset: DemoPreset) => {
-    setCurrentPreset(preset);
-    const newPayload = getPresetData(preset);
-    setPayload(newPayload);
-    setSelectedProtocol(newPayload.protocol);
+  // Logs stream
+  const [serialLogs, setSerialLogs] = useState<string[]>([]);
+  const [sessionEvents, setSessionEvents] = useState<string[]>([]);
 
-    const protoName = newPayload.protocol === 'I2C' ? 'I²C' : newPayload.protocol;
-    setConsoleLogs(prev => [
-      ...prev,
-      `[DEMO PRESET] Switched to ${preset}`,
-      `[AUTOSCOPE] Protocol locked to ${protoName} with ${newPayload.confidence.toFixed(1)}% confidence.`
-    ]);
+  // Serial Driver Event Subscriptions
+  useEffect(() => {
+    const driver = driverRef.current;
 
-    setEvents(prev => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        timestampMs: 0.100,
-        formattedTime: new Date().toISOString().substring(14, 21),
-        message: `Preset changed to ${pName(newPayload.protocol)}`,
-        type: 'info'
+    const unsubscribe = driver.subscribe({
+      onConnectionChange: (connected) => {
+        setHardwareStatus(prev => ({
+          ...prev,
+          esp32_2_connected: connected,
+          lcd_status: connected ? 'VERIFIED' : 'NOT VERIFIED',
+        }));
+
+        if (!connected) {
+          // Immediately stop displaying live measurements when disconnected!
+          setPayload({
+            state: 'DISCONNECTED',
+            protocol: null,
+            confidence: null,
+            statusText: null,
+            evidence: [],
+            parameters: {},
+            channels: [],
+            decodedRows: [],
+            health: {
+              validFrames: null,
+              invalidFrames: null,
+              timingConsistencyPercent: null,
+              transitionConsistencyPercent: null,
+              clockConsistencyPercent: null,
+              errorCount: null,
+            },
+            lcdMessage: null,
+          });
+          setSessionEvents(prev => [...prev, '[SYSTEM] Serial Connection Lost — Hardware Offline.']);
+        } else {
+          setPayload(prev => ({ ...prev, state: 'IDLE' }));
+          setSessionEvents(prev => [...prev, '[SYSTEM] ESP32 #2 AutoScope Analyzer Connected.']);
+        }
+      },
+      onDataPayload: (newPayload) => {
+        setPayload(newPayload);
+        if (newPayload.lcdMessage) {
+          setHardwareStatus(prev => ({ ...prev, lcd_status: `MSG: "${newPayload.lcdMessage}"` }));
+        }
+      },
+      onRawLog: (log) => {
+        setSerialLogs(prev => [...prev, log]);
+      },
+      onError: (err) => {
+        setSerialLogs(prev => [...prev, `[ERROR] ${err.message}`]);
       }
-    ]);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
-  function pName(p: ProtocolType) {
-    return p === 'I2C' ? 'I²C Bus' : p;
-  }
-
-  // Handle Auto Detect Sequence
-  const handleAutoDetect = () => {
-    setIsAutoDetecting(true);
-    setConsoleLogs(prev => [...prev, '[AUTODETECT] Triggered self-configuring signal analysis pipeline...']);
-  };
-
-  const handleAutoDetectComplete = () => {
-    setIsAutoDetecting(false);
-    const newPayload = getPresetData(currentPreset);
-    setPayload(newPayload);
-    setSelectedProtocol(newPayload.protocol);
-
-    setConsoleLogs(prev => [
-      ...prev,
-      `[AUTODETECT COMPLETE] ${newPayload.protocol} detected at ${newPayload.confidence.toFixed(1)}% confidence.`,
-      `[DECODER CONFIG] Applied parameters automatically.`
-    ]);
-  };
-
-  // Hardware Connection Triggers
-  const handleConnectSerial = async () => {
+  // Connect Serial Port via WebSerial
+  const handleConnectSerial = useCallback(async () => {
     try {
-      const serialSource = new SerialSignalSource();
-      const connected = await serialSource.connect();
-      if (connected) {
-        setHardwareStatus(prev => ({ ...prev, connected: true, connectionType: 'USB', deviceName: 'ESP32 (USB Serial)' }));
-        setConsoleLogs(prev => [...prev, '[HARDWARE] ESP32 WebSerial port connected successfully.']);
-      }
+      await driverRef.current.connect();
     } catch (err: any) {
-      alert(`Serial connection failed: ${err.message}`);
+      alert(`Serial Connection Error: ${err.message}`);
     }
-  };
+  }, []);
 
-  const handleConnectWebSocket = async () => {
-    const wsSource = new WebSocketSignalSource();
-    const connected = await wsSource.connect();
-    if (connected) {
-      setHardwareStatus(prev => ({ ...prev, connected: true, connectionType: 'WEBSOCKET', deviceName: 'ESP32 (WiFi WS)' }));
-      setConsoleLogs(prev => [...prev, '[HARDWARE] ESP32 WebSocket connected at ws://192.168.4.1/ws']);
-    } else {
-      alert('WebSocket connection failed. Ensure ESP32 AP is active at 192.168.4.1.');
+  // Disconnect Serial Port
+  const handleDisconnectSerial = useCallback(async () => {
+    await driverRef.current.disconnect();
+  }, []);
+
+  // Serial Command Triggers
+  const handleStartCapture = useCallback(async () => {
+    if (!hardwareStatus.esp32_2_connected) return;
+    try {
+      await driverRef.current.sendCommand('START');
+      setPayload(prev => ({ ...prev, state: 'CAPTURING' }));
+      setSessionEvents(prev => [...prev, '[COMMAND] Sent START capture signal to ESP32 #2.']);
+    } catch (err: any) {
+      alert(`Command Error: ${err.message}`);
     }
-  };
+  }, [hardwareStatus.esp32_2_connected]);
 
-  // Export handlers
+  const handleStopCapture = useCallback(async () => {
+    if (!hardwareStatus.esp32_2_connected) return;
+    try {
+      await driverRef.current.sendCommand('STOP');
+      setPayload(prev => ({ ...prev, state: 'IDLE' }));
+      setSessionEvents(prev => [...prev, '[COMMAND] Sent STOP capture signal to ESP32 #2.']);
+    } catch (err: any) {
+      alert(`Command Error: ${err.message}`);
+    }
+  }, [hardwareStatus.esp32_2_connected]);
+
+  const handleAutoDetect = useCallback(async () => {
+    if (!hardwareStatus.esp32_2_connected) return;
+    setIsAutoDetecting(true);
+    try {
+      await driverRef.current.sendCommand('AUTODETECT');
+      setSessionEvents(prev => [...prev, '[COMMAND] Triggered AUTODETECT pipeline on ESP32 #2.']);
+    } catch (err: any) {
+      alert(`Command Error: ${err.message}`);
+    }
+  }, [hardwareStatus.esp32_2_connected]);
+
+  const handleAutoDetectComplete = useCallback(() => {
+    setIsAutoDetecting(false);
+  }, []);
+
+  const handleSendConsoleCommand = useCallback(async (cmd: string) => {
+    try {
+      await driverRef.current.sendCommand(cmd);
+    } catch (err: any) {
+      alert(`Command Error: ${err.message}`);
+    }
+  }, []);
+
+  const handleClear = useCallback(() => {
+    setSerialLogs([]);
+    setSessionEvents([]);
+  }, []);
+
+  // CSV / JSON Exporters for real decoded rows
   const handleExportCsv = () => {
-    const headers = ['TimeMs', 'Channel', 'Hex', 'Dec', 'ASCII', 'Binary', 'Status'];
+    if (payload.decodedRows.length === 0) return;
+    const headers = ['TimeMs', 'Channel', 'Hex', 'Dec', 'ASCII', 'Status'];
     const csvContent = 'data:text/csv;charset=utf-8,' 
-      + [headers.join(','), ...payload.decodedRows.map(r => `${r.timeMs},${r.channel},${r.hex},${r.dec},"${r.ascii}",${r.binary},${r.status}`)].join('\n');
+      + [headers.join(','), ...payload.decodedRows.map(r => `${r.timeMs},${r.channel},${r.hex},${r.dec},"${r.ascii}",${r.status}`)].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `autoscope_${payload.protocol.toLowerCase()}_decoded.csv`);
+    link.setAttribute('download', `autoscope_real_decoded_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const handleExportJson = () => {
+    if (payload.decodedRows.length === 0) return;
     const jsonStr = JSON.stringify(payload.decodedRows, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `autoscope_${payload.protocol.toLowerCase()}_decoded.json`;
+    link.download = `autoscope_real_decoded_${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   const handleCopyHex = () => {
+    if (payload.decodedRows.length === 0) return;
     const hexList = payload.decodedRows.map(r => r.hex).join(' ');
     navigator.clipboard.writeText(hexList);
   };
@@ -191,60 +230,77 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-instrument-bg text-instrument-textBright font-sans flex flex-col overflow-hidden">
-      {/* Top Bar Header */}
+      {/* Top Header */}
       <TopBar
-        captureState={captureState}
-        onStartCapture={() => setCaptureState('CAPTURING')}
-        onStopCapture={() => setCaptureState('IDLE')}
-        onAutoDetect={handleAutoDetect}
-        onSelectPreset={handleSelectPreset}
-        currentPreset={currentPreset}
         hardwareStatus={hardwareStatus}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onToggleIntro={() => setShowLanding(true)}
+        analyzerState={payload.state}
+        onConnectSerial={handleConnectSerial}
+        onDisconnectSerial={handleDisconnectSerial}
+        onStartCapture={handleStartCapture}
+        onStopCapture={handleStopCapture}
+        onAutoDetect={handleAutoDetect}
+        onClear={handleClear}
       />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar Menu */}
+        {/* Left Sidebar Navigation */}
         <Sidebar
           activeTab={activeTab}
           onSelectTab={setActiveTab}
           hardwareStatus={hardwareStatus}
         />
 
-        {/* Main Workstation Workspace */}
-        <main className="flex-1 overflow-y-auto p-4 space-y-4 max-w-[1920px] mx-auto w-full">
-          {/* Top Presets Bar (hackathon interactive test controls) */}
-          <DemoModePanel
-            currentPreset={currentPreset}
-            onSelectPreset={handleSelectPreset}
-          />
+        {/* Main Area */}
+        <main className="flex-1 overflow-y-auto p-4 space-y-4 max-w-[1920px] mx-auto w-full font-mono">
+          {/* OFFLINE DISCONNECTED BANNER (State 1 requirement) */}
+          {!hardwareStatus.esp32_2_connected && (
+            <div className="instrument-card p-4 bg-instrument-bg border-instrument-red/40 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded bg-instrument-red/20 text-instrument-red border border-instrument-red/30">
+                  <AlertCircle className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-instrument-textBright uppercase">
+                    AUTOSCOPE — ANALYZER OFFLINE
+                  </h2>
+                  <p className="text-xs text-instrument-textMuted mt-0.5">
+                    Connect physical ESP32 #2 logic analyzer to USB port to begin real-time protocol capture.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleConnectSerial}
+                className="px-4 py-2 bg-instrument-blue text-white font-bold text-xs rounded-sm shadow-sm hover:bg-sky-600 flex items-center gap-2"
+              >
+                <Usb className="w-4 h-4" /> CONNECT ESP32 #2 SERIAL
+              </button>
+            </div>
+          )}
 
           {/* TAB 1: OVERVIEW DASHBOARD */}
           {activeTab === 'overview' && (
             <div className="space-y-4">
-              {/* Large Readout Banner */}
+              {/* 2. Protocol Identification Readout */}
               <ProtocolStatus
                 protocol={payload.protocol}
                 confidence={payload.confidence}
-                logicLevelV={payload.parameters.logicLevelV}
-                health={payload.health[0]}
-                isAnalyzing={captureState === 'ANALYZING'}
+                statusText={payload.statusText}
+                analyzerState={payload.state}
+                isConnected={hardwareStatus.esp32_2_connected}
               />
 
-              {/* Main Oscilloscope Waveform & Controls */}
+              {/* 1. Digital Signal Capture & Why This Result? */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-2 h-[340px]">
+                <div className="lg:col-span-2 h-[300px]">
                   <WaveformViewer
                     channels={payload.channels}
-                    captureState={captureState}
-                    onTogglePause={() => setCaptureState(s => s === 'CAPTURING' ? 'PAUSED' : 'CAPTURING')}
+                    isConnected={hardwareStatus.esp32_2_connected}
                     protocol={payload.protocol}
                   />
                 </div>
 
-                {/* Explainable Evidence */}
-                <div className="h-[340px]">
+                <div className="h-[300px]">
                   <DetectionEvidence
                     evidence={payload.evidence}
                     protocol={payload.protocol}
@@ -253,49 +309,13 @@ export function App() {
                 </div>
               </div>
 
-              {/* Parameters & Confidence Spectrum */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-2">
-                  <ParameterPanel
-                    parameters={payload.parameters}
-                    protocol={payload.protocol}
-                  />
-                </div>
+              {/* 3. Automatic Parameters */}
+              <ParameterPanel
+                parameters={payload.parameters}
+                protocol={payload.protocol}
+              />
 
-                <div>
-                  <ProtocolConfidence
-                    items={payload.confidences}
-                    selectedProtocol={selectedProtocol}
-                    onSelectProtocol={(p) => {
-                      setSelectedProtocol(p);
-                      const map: Record<ProtocolType, DemoPreset> = {
-                        'UART': 'UART_DEMO',
-                        'I2C': 'I2C_DEMO',
-                        'SPI': 'SPI_DEMO',
-                        'UNKNOWN': 'UNKNOWN_DEMO',
-                        'RS485': 'UNKNOWN_DEMO',
-                        'RS232': 'UART_DEMO',
-                        'CAN': 'UNKNOWN_DEMO',
-                        'LIN': 'UART_DEMO'
-                      };
-                      if (map[p]) handleSelectPreset(map[p]);
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Electrical Level & Signal Health */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <ElectricalLevelPanel electrical={payload.electrical} />
-                <SignalHealth health={payload.health[0]} />
-              </div>
-
-              {/* Fault Warning (if fault active) */}
-              {payload.fault.hasFault && (
-                <FaultDiagnosis fault={payload.fault} />
-              )}
-
-              {/* Decoded Data Table */}
+              {/* 5. Decoded Data Table */}
               <DecodedDataTable
                 rows={payload.decodedRows}
                 protocol={payload.protocol}
@@ -303,84 +323,103 @@ export function App() {
                 onExportJson={handleExportJson}
                 onCopyHex={handleCopyHex}
               />
+
+              {/* 6. Signal Health & Fault Diagnosis */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <SignalHealth
+                  health={payload.health}
+                  isConnected={hardwareStatus.esp32_2_connected}
+                />
+                <FaultDiagnosis
+                  health={payload.health}
+                  isConnected={hardwareStatus.esp32_2_connected}
+                />
+              </div>
             </div>
           )}
 
-          {/* TAB 2: LIVE ANALYZER WORKSTATION */}
-          {activeTab === 'analyzer' && (
+          {/* TAB 2: LIVE CAPTURE */}
+          {activeTab === 'capture' && (
             <div className="space-y-4">
-              <CaptureControls
-                captureState={captureState}
-                onStart={() => setCaptureState('CAPTURING')}
-                onStop={() => setCaptureState('IDLE')}
-                onPause={() => setCaptureState('PAUSED')}
-                onAutoDetect={handleAutoDetect}
-              />
+              <div className="instrument-card p-3 flex items-center justify-between font-mono text-xs">
+                <div className="flex items-center space-x-2">
+                  <Usb className="w-4 h-4 text-instrument-blue" />
+                  <span className="font-bold text-instrument-textBright">ESP32 #2 SERIAL CAPTURE CONTROLLER</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={handleStartCapture}
+                    disabled={!hardwareStatus.esp32_2_connected}
+                    className="px-3 py-1 bg-instrument-green text-black font-bold rounded-sm text-xs hover:bg-emerald-400 disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" /> START
+                  </button>
+                  <button
+                    onClick={handleStopCapture}
+                    disabled={!hardwareStatus.esp32_2_connected}
+                    className="px-3 py-1 bg-instrument-bg text-instrument-red border border-instrument-border font-bold rounded-sm text-xs hover:bg-instrument-red hover:text-white disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" /> STOP
+                  </button>
+                  <button
+                    onClick={handleAutoDetect}
+                    disabled={!hardwareStatus.esp32_2_connected}
+                    className="px-3 py-1 bg-instrument-purple text-white font-bold rounded-sm text-xs hover:bg-purple-600 disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" /> AUTO DETECT
+                  </button>
+                </div>
+              </div>
 
               <div className="h-[360px]">
                 <WaveformViewer
                   channels={payload.channels}
-                  captureState={captureState}
-                  onTogglePause={() => setCaptureState(s => s === 'CAPTURING' ? 'PAUSED' : 'CAPTURING')}
+                  isConnected={hardwareStatus.esp32_2_connected}
                   protocol={payload.protocol}
                 />
               </div>
 
-              <DecodedDataTable
-                rows={payload.decodedRows}
+              <ChannelMap
+                channels={payload.channels}
                 protocol={payload.protocol}
-                onExportCsv={handleExportCsv}
-                onExportJson={handleExportJson}
-                onCopyHex={handleCopyHex}
+              />
+            </div>
+          )}
+
+          {/* TAB 3: PROTOCOL */}
+          {activeTab === 'protocol' && (
+            <div className="space-y-4">
+              <ProtocolStatus
+                protocol={payload.protocol}
+                confidence={payload.confidence}
+                statusText={payload.statusText}
+                analyzerState={payload.state}
+                isConnected={hardwareStatus.esp32_2_connected}
               />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <AnalyzerConsole logs={consoleLogs} onClearLogs={() => setConsoleLogs([])} />
-                <EventTimeline events={events} />
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: WAVEFORM */}
-          {activeTab === 'waveform' && (
-            <div className="space-y-4">
-              <div className="h-[500px]">
-                <WaveformViewer
-                  channels={payload.channels}
-                  captureState={captureState}
-                  onTogglePause={() => setCaptureState(s => s === 'CAPTURING' ? 'PAUSED' : 'CAPTURING')}
-                  protocol={payload.protocol}
-                />
-              </div>
-
-              <ChannelMap mappings={payload.mappings} />
-            </div>
-          )}
-
-          {/* TAB 4: PROTOCOL DETECTION */}
-          {activeTab === 'detection' && (
-            <div className="space-y-4">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <ProtocolConfidence
-                  items={payload.confidences}
-                  selectedProtocol={selectedProtocol}
-                  onSelectProtocol={(p) => setSelectedProtocol(p)}
-                />
                 <DetectionEvidence
                   evidence={payload.evidence}
                   protocol={payload.protocol}
                   confidence={payload.confidence}
                 />
+                <ParameterPanel
+                  parameters={payload.parameters}
+                  protocol={payload.protocol}
+                />
               </div>
 
-              <ParameterPanel
-                parameters={payload.parameters}
-                protocol={payload.protocol}
-              />
+              {payload.protocol === 'UNKNOWN' && (
+                <UnknownProtocolPanel
+                  parameters={payload.parameters}
+                  confidence={payload.confidence}
+                  isConnected={hardwareStatus.esp32_2_connected}
+                />
+              )}
             </div>
           )}
 
-          {/* TAB 5: DECODED DATA */}
+          {/* TAB 4: DECODED DATA */}
           {activeTab === 'decoded' && (
             <div className="space-y-4">
               <DecodedDataTable
@@ -393,69 +432,63 @@ export function App() {
             </div>
           )}
 
-          {/* TAB 6: SIGNAL HEALTH */}
+          {/* TAB 5: SIGNAL HEALTH */}
           {activeTab === 'health' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <SignalHealth health={payload.health[0]} />
-                <ElectricalLevelPanel electrical={payload.electrical} />
-              </div>
-            </div>
-          )}
-
-          {/* TAB 7: FAULT DIAGNOSIS */}
-          {activeTab === 'fault' && (
-            <div className="space-y-4">
-              <FaultDiagnosis fault={payload.fault} />
-              <SignalHealth health={payload.health[0]} />
-            </div>
-          )}
-
-          {/* TAB 8: UNKNOWN PROTOCOL */}
-          {activeTab === 'unknown' && (
-            <div className="space-y-4">
-              <UnknownProtocolPanel data={payload.unknown} />
-              <div className="h-[300px]">
-                <WaveformViewer
-                  channels={payload.channels}
-                  captureState={captureState}
-                  onTogglePause={() => setCaptureState(s => s === 'CAPTURING' ? 'PAUSED' : 'CAPTURING')}
-                  protocol="UNKNOWN"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* TAB 9: CAPTURE HISTORY */}
-          {activeTab === 'history' && (
-            <div className="space-y-4">
-              <CaptureHistory
-                captures={savedCaptures}
-                onLoadCapture={(preset) => {
-                  handleSelectPreset(preset);
-                  setActiveTab('overview');
-                }}
-                onDeleteCapture={(id) => {
-                  setSavedCaptures(prev => prev.filter(c => c.id !== id));
-                }}
+              <SignalHealth
+                health={payload.health}
+                isConnected={hardwareStatus.esp32_2_connected}
+              />
+              <FaultDiagnosis
+                health={payload.health}
+                isConnected={hardwareStatus.esp32_2_connected}
               />
             </div>
           )}
 
-          {/* TAB 10: SETTINGS / HARDWARE */}
+          {/* TAB 6: HARDWARE STACK */}
+          {activeTab === 'hardware' && (
+            <div className="space-y-4">
+              <HardwareStackPanel
+                hardwareStatus={hardwareStatus}
+                lcdMessage={payload.lcdMessage}
+                onConnectSerial={handleConnectSerial}
+                onDisconnectSerial={handleDisconnectSerial}
+              />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <AnalyzerConsole
+                  logs={serialLogs}
+                  onClearLogs={() => setSerialLogs([])}
+                  onSendCommand={handleSendConsoleCommand}
+                  isConnected={hardwareStatus.esp32_2_connected}
+                />
+                <EventTimeline logs={sessionEvents} />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: SETTINGS */}
           {activeTab === 'settings' && (
             <div className="space-y-4">
-              <ConnectionStatus
-                hardwareStatus={hardwareStatus}
-                onConnectSerial={handleConnectSerial}
-                onConnectWebSocket={handleConnectWebSocket}
-              />
+              <div className="instrument-card p-4 space-y-3">
+                <h3 className="font-bold text-sm text-instrument-textBright uppercase">SERIAL INTERFACE CONFIGURATION</h3>
+                <p className="text-xs text-instrument-textMuted">
+                  Configure WebSerial baud rate for communication with ESP32 #2. Default rate is 115200 baud.
+                </p>
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="px-3 py-1.5 bg-instrument-blue text-white font-bold text-xs rounded-sm hover:bg-sky-600"
+                >
+                  OPEN HARDWARE SETTINGS
+                </button>
+              </div>
             </div>
           )}
         </main>
       </div>
 
-      {/* Modals & Animations */}
+      {/* Pipeline & Settings Modals */}
       <AutoDetectModal
         isOpen={isAutoDetecting}
         onComplete={handleAutoDetectComplete}
@@ -465,7 +498,7 @@ export function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         hardwareStatus={hardwareStatus}
-        onUpdateHardwareStatus={(updated) => setHardwareStatus(prev => ({ ...prev, ...updated }))}
+        onUpdateBaud={(baud) => setHardwareStatus(prev => ({ ...prev, serialBaud: baud }))}
       />
     </div>
   );

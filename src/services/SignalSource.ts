@@ -1,269 +1,281 @@
-import type { 
-  DemoPreset, 
-  ProtocolDetectionPayload
-} from '../types/analyzer';
-import { getPresetData } from './mockData';
+import type { RealAnalyzerPayload, AnalyzerState } from '../types/analyzer';
 
-export interface SignalFramePayload {
-  timestamp: number;
-  channels: Record<string, number>;
-}
-
-export interface SignalSourceListener {
-  onFrame?: (frame: SignalFramePayload) => void;
-  onDetection?: (payload: ProtocolDetectionPayload) => void;
-  onStatusChange?: (status: string) => void;
+export interface SerialDriverListener {
+  onConnectionChange?: (connected: boolean) => void;
+  onDataPayload?: (payload: RealAnalyzerPayload) => void;
+  onRawLog?: (log: string) => void;
   onError?: (error: Error) => void;
 }
 
 /**
- * Base abstract class for hardware signal sources (ESP32, Pico, Serial, WebSocket, Demo)
+ * Real Hardware WebSerial Driver for ESP32 #2 AutoScope Analyzer.
+ * Zero demo data, zero mock data, pure real serial communication.
  */
-export abstract class SignalSource {
-  protected listeners: Set<SignalSourceListener> = new Set();
-  public isConnected: boolean = false;
+export class SerialHardwareDriver {
+  private port: any = null;
+  private reader: any = null;
+  private isConnected: boolean = false;
+  private listeners: Set<SerialDriverListener> = new Set();
+  private keepReading: boolean = false;
+  private lineBuffer: string = '';
 
-  public subscribe(listener: SignalSourceListener): () => void {
+  public subscribe(listener: SerialDriverListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  public abstract connect(): Promise<boolean>;
-  public abstract disconnect(): Promise<void>;
-  public abstract startCapture(): void;
-  public abstract stopCapture(): void;
-  public abstract autoDetect(): Promise<ProtocolDetectionPayload>;
-
-  protected notifyFrame(frame: SignalFramePayload) {
-    this.listeners.forEach(l => l.onFrame?.(frame));
+  public getConnected(): boolean {
+    return this.isConnected;
   }
-
-  protected notifyDetection(payload: ProtocolDetectionPayload) {
-    this.listeners.forEach(l => l.onDetection?.(payload));
-  }
-
-  protected notifyStatus(status: string) {
-    this.listeners.forEach(l => l.onStatusChange?.(status));
-  }
-}
-
-/**
- * Demo / Simulation Signal Source used in Hackathon Demo Mode
- */
-export class DemoSignalSource extends SignalSource {
-  private currentPreset: DemoPreset = 'UART_DEMO';
-  private timerId: number | null = null;
-
-  constructor(preset: DemoPreset = 'UART_DEMO') {
-    super();
-    this.currentPreset = preset;
-    this.isConnected = true;
-  }
-
-  public setPreset(preset: DemoPreset) {
-    this.currentPreset = preset;
-  }
-
-  public async connect(): Promise<boolean> {
-    this.isConnected = true;
-    this.notifyStatus('CONNECTED (DEMO MODE)');
-    return true;
-  }
-
-  public async disconnect(): Promise<void> {
-    this.stopCapture();
-    this.isConnected = false;
-    this.notifyStatus('DISCONNECTED');
-  }
-
-  public startCapture(): void {
-    this.notifyStatus('CAPTURING');
-    if (this.timerId) clearInterval(this.timerId);
-    
-    let time = 0;
-    this.timerId = window.setInterval(() => {
-      time += 0.05;
-      const sampleFrame: SignalFramePayload = {
-        timestamp: time,
-        channels: {
-          CH1: Math.random() > 0.5 ? 1 : 0,
-          CH2: Math.random() > 0.3 ? 1 : 0,
-          CH3: Math.random() > 0.7 ? 1 : 0,
-          CH4: Math.random() > 0.9 ? 1 : 0,
-        }
-      };
-      this.notifyFrame(sampleFrame);
-    }, 100);
-  }
-
-  public stopCapture(): void {
-    if (this.timerId) {
-      clearInterval(this.timerId);
-      this.timerId = null;
-    }
-    this.notifyStatus('PAUSED');
-  }
-
-  public async autoDetect(): Promise<ProtocolDetectionPayload> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const payload = getPresetData(this.currentPreset);
-        this.notifyDetection(payload);
-        resolve(payload);
-      }, 1800);
-    });
-  }
-}
-
-/**
- * WebSerial API Hardware Source (For physical ESP32 connected via USB Serial)
- */
-export class SerialSignalSource extends SignalSource {
-  private port: any = null;
-  private reader: any = null;
 
   public async connect(): Promise<boolean> {
     if (!('serial' in navigator)) {
-      throw new Error('WebSerial API is not supported in this browser. Use Chrome/Edge.');
+      throw new Error('WebSerial API is not supported in this browser. Please use Chrome, Edge, or Opera.');
     }
     try {
       this.port = await (navigator as any).serial.requestPort();
-      await this.port.open({ baudRate: 921600 });
+      await this.port.open({ baudRate: 115200 });
       this.isConnected = true;
-      this.notifyStatus('ESP32 USB SERIAL CONNECTED');
+      this.keepReading = true;
+      
+      this.notifyConnection(true);
+      this.notifyLog('[SERIAL] USB Serial Port opened with ESP32 #2 at 115200 baud.');
+      
+      // Listen for hardware disconnects
+      (navigator as any).serial.addEventListener('disconnect', (e: any) => {
+        if (e.target === this.port) {
+          this.disconnect();
+        }
+      });
+
+      // Start serial read stream loop
+      this.readLoop();
       return true;
     } catch (err: any) {
       this.isConnected = false;
-      this.listeners.forEach(l => l.onError?.(err));
+      this.notifyConnection(false);
+      this.notifyError(err);
       return false;
     }
   }
 
   public async disconnect(): Promise<void> {
+    this.keepReading = false;
     if (this.reader) {
-      await this.reader.cancel();
+      try {
+        await this.reader.cancel();
+      } catch {
+        // ignore
+      }
     }
     if (this.port) {
-      await this.port.close();
+      try {
+        await this.port.close();
+      } catch {
+        // ignore
+      }
     }
+    this.port = null;
+    this.reader = null;
     this.isConnected = false;
-    this.notifyStatus('SERIAL DISCONNECTED');
+    this.notifyConnection(false);
+    this.notifyLog('[SERIAL] ESP32 #2 disconnected. Analyzer offline.');
   }
 
-  public startCapture(): void {
-    if (!this.port) return;
-    this.readSerialStream();
-    this.notifyStatus('CAPTURING REAL HARDWARE');
-  }
-
-  public stopCapture(): void {
-    if (this.reader) {
-      this.reader.cancel();
+  public async sendCommand(cmd: string): Promise<void> {
+    if (!this.port || !this.port.writable) {
+      throw new Error('ESP32 #2 is not connected via Serial.');
     }
-    this.notifyStatus('PAUSED');
+    const writer = this.port.writable.getWriter();
+    const encoder = new TextEncoder();
+    await writer.write(encoder.encode(cmd + '\n'));
+    writer.releaseLock();
+    this.notifyLog(`[SERIAL TX] > ${cmd}`);
   }
 
-  public async autoDetect(): Promise<ProtocolDetectionPayload> {
-    if (this.port && this.port.writable) {
-      const writer = this.port.writable.getWriter();
-      const encoder = new TextEncoder();
-      await writer.write(encoder.encode('AUTODETECT\n'));
-      writer.releaseLock();
-    }
-    return getPresetData('UART_DEMO');
-  }
+  private async readLoop() {
+    while (this.port && this.port.readable && this.keepReading) {
+      try {
+        const textDecoder = new TextDecoderStream();
+        this.port.readable.pipeTo(textDecoder.writable);
+        this.reader = textDecoder.readable.getReader();
 
-  private async readSerialStream() {
-    const textDecoder = new TextDecoderStream();
-    this.port.readable.pipeTo(textDecoder.writable);
-    this.reader = textDecoder.readable.getReader();
-
-    try {
-      while (true) {
-        const { value, done } = await this.reader.read();
-        if (done) break;
-        if (value) {
+        while (this.keepReading) {
+          const { value, done } = await this.reader.read();
+          if (done) break;
+          if (value) {
+            this.handleChunk(value);
+          }
+        }
+      } catch (err: any) {
+        if (this.keepReading) {
+          this.notifyError(err);
+        }
+        break;
+      } finally {
+        if (this.reader) {
           try {
-            const parsed = JSON.parse(value);
-            if (parsed.timestamp && parsed.channels) {
-              this.notifyFrame(parsed);
-            }
+            this.reader.releaseLock();
           } catch {
-            // raw telemetry
+            // ignore
           }
         }
       }
-    } catch (err: any) {
-      console.error('Serial read error:', err);
-    } finally {
-      this.reader.releaseLock();
     }
   }
-}
 
-/**
- * WebSocket Hardware Source
- */
-export class WebSocketSignalSource extends SignalSource {
-  private ws: WebSocket | null = null;
-  private url: string;
+  private handleChunk(chunk: string) {
+    this.lineBuffer += chunk;
+    const lines = this.lineBuffer.split('\n');
+    this.lineBuffer = lines.pop() || ''; // Keep partial line in buffer
 
-  constructor(url: string = 'ws://192.168.4.1/ws') {
-    super();
-    this.url = url;
-  }
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
 
-  public async connect(): Promise<boolean> {
-    return new Promise((resolve) => {
-      this.ws = new WebSocket(this.url);
-      this.ws.onopen = () => {
-        this.isConnected = true;
-        this.notifyStatus('ESP32 WEBSOCKET CONNECTED');
-        resolve(true);
-      };
-      this.ws.onerror = () => {
-        this.isConnected = false;
-        resolve(false);
-      };
-      this.ws.onmessage = (event) => {
+      this.notifyLog(`[SERIAL RX] ${trimmed}`);
+
+      // Try parsing JSON payload from ESP32 #2
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
         try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'frame') {
-            this.notifyFrame(data.payload);
-          } else if (data.type === 'detection') {
-            this.notifyDetection(data.payload);
+          const jsonPayload = JSON.parse(trimmed);
+          const parsedPayload = this.parseAnalyzerJSON(jsonPayload);
+          if (parsedPayload) {
+            this.notifyPayload(parsedPayload);
           }
         } catch {
-          // ignore
+          // invalid JSON string
         }
-      };
-    });
-  }
-
-  public async disconnect(): Promise<void> {
-    if (this.ws) {
-      this.ws.close();
-    }
-    this.isConnected = false;
-    this.notifyStatus('DISCONNECTED');
-  }
-
-  public startCapture(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ command: 'START' }));
+      } else {
+        // Text status line parsing
+        this.parseTextLine(trimmed);
+      }
     }
   }
 
-  public stopCapture(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ command: 'STOP' }));
+  private parseAnalyzerJSON(json: any): RealAnalyzerPayload | null {
+    if (!json || typeof json !== 'object') return null;
+
+    const state: AnalyzerState = json.state || (json.protocol ? 'DETECTED' : 'ANALYZING');
+    
+    return {
+      state,
+      protocol: json.protocol || null,
+      confidence: typeof json.confidence === 'number' ? json.confidence : null,
+      statusText: json.statusText || json.status || null,
+      evidence: Array.isArray(json.evidence) ? json.evidence : [],
+      parameters: {
+        channel: json.channel,
+        baudRate: json.baud || json.baudRate,
+        format: json.format,
+        idle: json.idle,
+        bitPeriodUs: json.bitPeriodUs || json.bit_period,
+        sdaChannel: json.sda,
+        sclChannel: json.scl,
+        clockHz: json.clock || json.clockHz,
+        addressHex: json.address,
+        rwMode: json.rw,
+        ackState: json.ack,
+        sclkChannel: json.sclk,
+        mosiChannel: json.mosi,
+        misoChannel: json.miso,
+        csChannel: json.cs,
+        clockHzSpi: json.clockSpi || json.spiClock,
+        spiMode: json.mode,
+        cpol: json.cpol,
+        cpha: json.cpha,
+        bitOrder: json.bit_order || json.bitOrder,
+        activeChannelsCount: json.activeChannelsCount,
+        idleState: json.idleState,
+        transitionCount: json.transitionCount,
+        timingInfo: json.timingInfo,
+        uartScore: json.uartScore,
+        i2cScore: json.i2cScore,
+        spiScore: json.spiScore,
+      },
+      channels: Array.isArray(json.channels) 
+        ? json.channels.map((ch: any) => ({
+            id: ch.id || 'CH1',
+            assignedLabel: ch.assignedLabel || ch.label || ch.id || 'CH1',
+            data: Array.isArray(ch.data) ? ch.data : []
+          }))
+        : [],
+      decodedRows: Array.isArray(json.decoded)
+        ? json.decoded.map((d: any, idx: number) => ({
+            id: d.id || `${idx}`,
+            timeMs: typeof d.timeMs === 'number' ? d.timeMs : idx * 0.087,
+            channel: d.channel || 'CH1',
+            hex: d.hex || '0x00',
+            dec: typeof d.dec === 'number' ? d.dec : 0,
+            ascii: d.ascii || '?',
+            status: d.status || 'OK',
+            addressHex: d.address,
+            rw: d.rw,
+            ack: d.ack,
+            mosiHex: d.mosi,
+            misoHex: d.miso,
+            csState: d.cs
+          }))
+        : [],
+      health: {
+        validFrames: typeof json.health?.validFrames === 'number' ? json.health.validFrames : null,
+        invalidFrames: typeof json.health?.invalidFrames === 'number' ? json.health.invalidFrames : null,
+        timingConsistencyPercent: typeof json.health?.timingConsistencyPercent === 'number' ? json.health.timingConsistencyPercent : null,
+        transitionConsistencyPercent: typeof json.health?.transitionConsistencyPercent === 'number' ? json.health.transitionConsistencyPercent : null,
+        clockConsistencyPercent: typeof json.health?.clockConsistencyPercent === 'number' ? json.health.clockConsistencyPercent : null,
+        errorCount: typeof json.health?.errorCount === 'number' ? json.health.errorCount : null,
+      },
+      lcdMessage: json.lcd || json.lcdMessage || null
+    };
+  }
+
+  private parseTextLine(line: string) {
+    // Basic status text regex matcher for simpler microcontrollers
+    if (line.includes('STATE: IDLE')) {
+      this.notifyPayloadState('IDLE');
+    } else if (line.includes('STATE: CAPTURING')) {
+      this.notifyPayloadState('CAPTURING');
+    } else if (line.includes('STATE: ANALYZING')) {
+      this.notifyPayloadState('ANALYZING');
     }
   }
 
-  public async autoDetect(): Promise<ProtocolDetectionPayload> {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ command: 'AUTO_DETECT' }));
-    }
-    return getPresetData('UART_DEMO');
+  private notifyPayloadState(state: AnalyzerState) {
+    const emptyPayload: RealAnalyzerPayload = {
+      state,
+      protocol: null,
+      confidence: null,
+      statusText: null,
+      evidence: [],
+      parameters: {},
+      channels: [],
+      decodedRows: [],
+      health: {
+        validFrames: null,
+        invalidFrames: null,
+        timingConsistencyPercent: null,
+        transitionConsistencyPercent: null,
+        clockConsistencyPercent: null,
+        errorCount: null,
+      },
+      lcdMessage: null
+    };
+    this.notifyPayload(emptyPayload);
+  }
+
+  private notifyConnection(connected: boolean) {
+    this.listeners.forEach(l => l.onConnectionChange?.(connected));
+  }
+
+  private notifyPayload(payload: RealAnalyzerPayload) {
+    this.listeners.forEach(l => l.onDataPayload?.(payload));
+  }
+
+  private notifyLog(log: string) {
+    this.listeners.forEach(l => l.onRawLog?.(log));
+  }
+
+  private notifyError(err: Error) {
+    this.listeners.forEach(l => l.onError?.(err));
   }
 }

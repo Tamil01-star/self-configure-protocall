@@ -1,173 +1,113 @@
-export type ProtocolType = 'UART' | 'I2C' | 'SPI' | 'UNKNOWN' | 'RS485' | 'RS232' | 'CAN' | 'LIN';
+export type ProtocolType = 'UART' | 'I2C' | 'SPI' | 'UNKNOWN';
 
-export type DemoPreset = 'UART_DEMO' | 'I2C_DEMO' | 'SPI_DEMO' | 'UNKNOWN_DEMO' | 'FAULT_DEMO';
-
-export type CaptureState = 'IDLE' | 'CAPTURING' | 'ANALYZING' | 'PAUSED' | 'ERROR';
+export type AnalyzerState = 
+  | 'DISCONNECTED'
+  | 'IDLE'
+  | 'CAPTURING'
+  | 'ANALYZING'
+  | 'TESTING HYPOTHESES'
+  | 'VALIDATING'
+  | 'DETECTED'
+  | 'UNKNOWN'
+  | 'ERROR';
 
 export type NavigationTab = 
   | 'overview'
-  | 'analyzer'
-  | 'waveform'
-  | 'detection'
+  | 'capture'
+  | 'protocol'
   | 'decoded'
   | 'health'
-  | 'fault'
-  | 'unknown'
-  | 'history'
+  | 'hardware'
   | 'settings';
 
-export interface ChannelSignal {
-  id: string; // e.g. 'CH1'
-  name: string; // e.g. 'TX', 'SCLK', 'SDA'
-  color: string;
-  enabled: boolean;
-  highVoltage: number;
-  lowVoltage: number;
-  dutyCycle: number; // percentage
-  frequencyHz: number;
-  digitalData: number[]; // binary stream 0s and 1s for rendering waveform
+export interface DigitalChannelSample {
+  id: string; // 'CH1', 'CH2', 'CH3', 'CH4'
+  assignedLabel: string; // e.g., 'CH1', 'UART DATA', 'SDA', 'SCL', 'SCLK', 'MOSI', 'MISO', 'CS'
+  data: number[]; // 0s and 1s received from hardware
 }
 
-export interface ProtocolConfidenceItem {
-  protocol: ProtocolType;
-  displayName: string;
-  confidence: number; // 0 - 100
-  isDetected: boolean;
-}
-
-export interface DetectionEvidenceItem {
-  id: string;
-  text: string;
-  verified: boolean;
-}
-
-export interface ProtocolParameters {
+export interface RealProtocolParameters {
+  // Common
+  channel?: string;
+  
   // UART
   baudRate?: number;
-  dataBits?: number;
-  parity?: 'NONE' | 'EVEN' | 'ODD';
-  stopBits?: number;
-  bitTimeUs?: number;
+  format?: string; // e.g. "8N1"
+  idle?: 'HIGH' | 'LOW';
+  bitPeriodUs?: number;
 
   // I2C
-  busSpeedKhz?: number;
+  sdaChannel?: string;
+  sclChannel?: string;
+  clockHz?: number;
   addressHex?: string;
   rwMode?: 'READ' | 'WRITE';
-  ackState?: 'ACK' | 'NACK';
+  ackState?: boolean;
 
   // SPI
-  clockMhz?: number;
-  cpol?: 0 | 1;
-  cpha?: 0 | 1;
-  bitOrder?: 'MSB FIRST' | 'LSB FIRST';
-  dataWidth?: number;
+  sclkChannel?: string;
+  mosiChannel?: string;
+  misoChannel?: string;
+  csChannel?: string;
+  clockHzSpi?: number;
+  spiMode?: number; // 0, 1, 2, 3
+  cpol?: number;
+  cpha?: number;
+  bitOrder?: 'MSB' | 'LSB';
 
-  // General
-  logicLevelV: number;
-  estimatedFrameLenBits?: number;
-  dominantFreqMhz?: number;
+  // Unknown / Custom
+  activeChannelsCount?: number;
+  idleState?: string;
+  transitionCount?: number;
+  timingInfo?: string;
+  uartScore?: number;
+  i2cScore?: number;
+  spiScore?: number;
 }
 
-export interface DecodedRow {
+export interface RealDecodedRow {
   id: string;
   timeMs: number;
   channel: string;
   hex: string;
   dec: number;
   ascii: string;
-  binary: string;
-  status: 'OK' | 'ERROR' | 'START' | 'STOP' | 'ACK' | 'NACK';
-  // Extra protocol-specific fields
+  status: string;
+  // Protocol specific optional fields
   addressHex?: string;
   rw?: 'R' | 'W';
-  ackState?: 'ACK' | 'NACK';
+  ack?: boolean;
   mosiHex?: string;
   misoHex?: string;
   csState?: 'LOW' | 'HIGH';
 }
 
-export interface ElectricalLevelData {
-  vLow: number;
-  vHigh: number;
-  vAmplitude: number;
-  detectedStandard: string; // '3.3 V TTL', '1.8 V', '5 V', etc.
-  availableStandards: { name: string; voltage: number; active: boolean }[];
+export interface RealSignalHealth {
+  validFrames: number | null;
+  invalidFrames: number | null;
+  timingConsistencyPercent: number | null;
+  transitionConsistencyPercent: number | null;
+  clockConsistencyPercent: number | null;
+  errorCount: number | null;
 }
 
-export interface ChannelMapping {
-  channelId: string;
-  assignedRole: string;
-  confidence: number;
+export interface RealAnalyzerPayload {
+  state: AnalyzerState;
+  protocol: ProtocolType | null;
+  confidence: number | null;
+  statusText: string | null;
+  evidence: string[];
+  parameters: RealProtocolParameters;
+  channels: DigitalChannelSample[];
+  decodedRows: RealDecodedRow[];
+  health: RealSignalHealth;
+  lcdMessage: string | null;
 }
 
-export interface SignalHealthData {
-  healthScore: number; // 0 - 100
-  frameErrors: number;
-  parityErrors: number;
-  timingJitterPercent: number;
-  noiseEvents: number;
-  invalidFrames: number;
-  status: 'HEALTHY' | 'WARNING' | 'FAULT';
-}
-
-export interface FaultDiagnosisData {
-  hasFault: boolean;
-  title: string;
-  errorPercentage: number;
-  possibleCauses: string[];
-  recommendedAction: string;
-}
-
-export interface UnknownProtocolData {
-  confidence: number;
-  logicVoltage: number;
-  channelCount: number;
-  dominantFreqMhz: number;
-  estimatedFrameBits: number;
-  patternDetected: boolean;
-  rawBytes: string[];
-}
-
-export interface TimelineEvent {
-  id: string;
-  timestampMs: number;
-  formattedTime: string;
-  message: string;
-  type: 'info' | 'success' | 'warning' | 'error';
-}
-
-export interface SavedCapture {
-  id: string;
-  name: string;
-  timestamp: string;
-  protocol: ProtocolType;
-  baudOrFreq: string;
-  healthStatus: 'HEALTHY' | 'WARNING' | 'FAULT';
-  healthScore: number;
-  dataCount: number;
-  notes: string;
-}
-
-export interface HardwareStatus {
-  connected: boolean;
-  deviceName: string;
-  connectionType: 'USB' | 'WEBSOCKET' | 'SIMULATION';
-  samplingRate: string; // e.g. "2 MS/s"
-  channelsAvailable: number;
-  bufferKb: number;
-}
-
-export interface ProtocolDetectionPayload {
-  protocol: ProtocolType;
-  confidence: number;
-  parameters: ProtocolParameters;
-  channels: ChannelSignal[];
-  decodedRows: DecodedRow[];
-  evidence: DetectionEvidenceItem[];
-  confidences: ProtocolConfidenceItem[];
-  health: SignalHealthData[];
-  electrical: ElectricalLevelData;
-  mappings: ChannelMapping[];
-  fault: FaultDiagnosisData;
-  unknown: UnknownProtocolData;
+export interface SystemHardwareStatus {
+  esp32_1_status: 'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN';
+  esp32_2_connected: boolean;
+  lcd_status: string;
+  laptop_status: 'RUNNING';
+  serialBaud: number;
 }

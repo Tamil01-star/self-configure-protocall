@@ -8,36 +8,31 @@ export default {
     extend: {
       colors: {
         instrument: {
-          bg: '#f8fafc',
-          panel: '#ffffff',
-          panelHeader: '#f1f5f9',
-          border: '#e2e8f0',
-          borderHighlight: '#cbd5e1',
-          grid: '#e2e8f0',
-          cyan: '#0284c7', // Deep electric blue/cyan for high contrast in light mode
-          cyanDim: 'rgba(2, 132, 199, 0.12)',
-          cyanGlow: 'rgba(2, 132, 199, 0.3)',
-          green: '#059669', // Emerald green
-          greenDim: 'rgba(5, 150, 105, 0.12)',
-          amber: '#d97706', // Amber warning
-          amberDim: 'rgba(217, 119, 6, 0.12)',
-          red: '#dc2626', // High contrast red
-          redDim: 'rgba(220, 38, 38, 0.12)',
-          purple: '#7c3aed', // Purple analysis
-          purpleDim: 'rgba(124, 58, 237, 0.12)',
-          blue: '#2563eb',
+          bg: '#0b0e14',
+          panel: '#121720',
+          panelHeader: '#171e2b',
+          border: '#222c3d',
+          borderHighlight: '#2d3b52',
+          grid: '#1a2230',
+          blue: '#0ea5e9',
+          green: '#10b981',
+          amber: '#f59e0b',
+          red: '#ef4444',
+          purple: '#8b5cf6',
           textMuted: '#64748b',
-          textSubtle: '#475569',
-          textBright: '#0f172a',
+          textSubtle: '#94a3b8',
+          textBright: '#f1f5f9',
         }
       },
       fontFamily: {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace'],
         sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
       },
-      boxShadow: {
-        'instrument': '0 4px 12px -2px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
-        'cyan-glow': '0 0 12px rgba(2, 132, 199, 0.25)',
+      borderRadius: {
+        DEFAULT: '3px',
+        sm: '2px',
+        md: '3px',
+        lg: '4px',
       }
     },
   },

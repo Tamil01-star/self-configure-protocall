@@ -4,71 +4,85 @@ import { Terminal, Trash2, Send } from 'lucide-react';
 interface AnalyzerConsoleProps {
   logs: string[];
   onClearLogs: () => void;
+  onSendCommand: (cmd: string) => void;
+  isConnected: boolean;
 }
 
-export const AnalyzerConsole: React.FC<AnalyzerConsoleProps> = ({ logs, onClearLogs }) => {
+export const AnalyzerConsole: React.FC<AnalyzerConsoleProps> = ({
+  logs,
+  onClearLogs,
+  onSendCommand,
+  isConnected,
+}) => {
   const [commandInput, setCommandInput] = useState<string>('');
-  const [customLogs, setCustomLogs] = useState<string[]>([]);
 
   const handleSendCommand = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commandInput.trim()) return;
-    const cmd = commandInput.trim();
-    setCustomLogs(prev => [...prev, `> ${cmd}`, `[AUTOSCOPE EXEC] Processing command: ${cmd}... OK`]);
+    if (!commandInput.trim() || !isConnected) return;
+    onSendCommand(commandInput.trim());
     setCommandInput('');
   };
 
-  const allLogs = [...logs, ...customLogs];
-
   return (
-    <div className="instrument-card p-4 font-mono text-xs flex flex-col h-full bg-white border border-slate-200">
-      <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+    <div className="instrument-card p-3 font-mono text-xs flex flex-col h-full">
+      <div className="flex items-center justify-between border-b border-instrument-border pb-2 mb-2">
         <div className="flex items-center space-x-2">
-          <Terminal className="w-4 h-4 text-emerald-600" />
-          <span className="text-xs font-bold text-slate-900 uppercase">
-            AUTOSCOPE INSTRUMENT COMMAND CONSOLE
+          <Terminal className="w-3.5 h-3.5 text-instrument-green" />
+          <span className="font-bold text-instrument-textBright uppercase">
+            HARDWARE SERIAL LOG & COMMAND CONSOLE
           </span>
         </div>
         <button
-          onClick={() => { onClearLogs(); setCustomLogs([]); }}
-          className="text-slate-400 hover:text-red-600 transition-all p-1"
-          title="Clear Console Output"
+          onClick={onClearLogs}
+          className="text-instrument-textMuted hover:text-instrument-red transition-colors p-1"
+          title="Clear Serial Console"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="flex-1 bg-slate-900 p-3 rounded border border-slate-800 overflow-y-auto space-y-1 text-[11px] max-h-[220px]">
-        <div className="text-sky-400 font-bold">[AUTOSCOPE KERNEL v2.4 initialized]</div>
-        {allLogs.map((line, idx) => (
-          <div key={idx} className="text-slate-100 leading-relaxed font-mono">
-            {line.startsWith('>') ? (
-              <span className="text-sky-300 font-bold">{line}</span>
-            ) : line.includes('PASS') || line.includes('complete') || line.includes('OK') ? (
-              <span className="text-emerald-400 font-semibold">{line}</span>
-            ) : line.includes('WARN') || line.includes('FAULT') ? (
-              <span className="text-amber-400 font-semibold">{line}</span>
-            ) : (
-              <span className="text-slate-300">{line}</span>
-            )}
-          </div>
-        ))}
+      {/* Log Output Stream */}
+      <div className="flex-1 bg-instrument-bg p-2.5 rounded-sm border border-instrument-border overflow-y-auto space-y-1 text-[11px] max-h-[220px] min-h-[120px]">
+        {logs.length === 0 ? (
+          <div className="text-instrument-textMuted italic">[No serial messages recorded]</div>
+        ) : (
+          logs.map((line, idx) => (
+            <div key={idx} className="leading-relaxed font-mono">
+              {line.includes('RX') ? (
+                <span className="text-instrument-green">{line}</span>
+              ) : line.includes('TX') ? (
+                <span className="text-instrument-blue font-bold">{line}</span>
+              ) : line.includes('SERIAL') ? (
+                <span className="text-instrument-amber font-semibold">{line}</span>
+              ) : (
+                <span className="text-instrument-textSubtle">{line}</span>
+              )}
+            </div>
+          ))
+        )}
       </div>
 
-      <form onSubmit={handleSendCommand} className="mt-3 flex items-center space-x-2">
-        <span className="text-sky-600 font-bold">&gt;</span>
+      {/* Input Form */}
+      <form onSubmit={handleSendCommand} className="mt-2 flex items-center space-x-2">
+        <span className="text-instrument-blue font-bold">&gt;</span>
         <input
           type="text"
-          placeholder="Type command (e.g. set baud 115200, trigger edge ch1)..."
+          placeholder={isConnected ? "Type Serial command (e.g. AUTODETECT, START, STOP)..." : "Serial disconnected..."}
+          disabled={!isConnected}
           value={commandInput}
           onChange={(e) => setCommandInput(e.target.value)}
-          className="flex-1 bg-slate-50 px-3 py-1.5 rounded border border-slate-200 text-slate-900 focus:border-sky-600 focus:outline-none text-xs font-medium"
+          className="flex-1 bg-instrument-bg px-2.5 py-1 rounded-sm border border-instrument-border text-instrument-textBright focus:border-instrument-blue focus:outline-none text-xs font-mono disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <button
           type="submit"
-          className="px-3 py-1.5 bg-sky-600 text-white font-bold rounded text-xs hover:bg-sky-700 transition-all shadow-sm"
+          disabled={!isConnected || !commandInput.trim()}
+          className={`px-3 py-1 font-bold rounded-sm text-xs flex items-center gap-1 transition-colors ${
+            isConnected && commandInput.trim()
+              ? 'bg-instrument-blue text-white hover:bg-sky-600'
+              : 'bg-instrument-bg text-instrument-textMuted border border-instrument-border cursor-not-allowed opacity-50'
+          }`}
         >
-          <Send className="w-3.5 h-3.5" />
+          <Send className="w-3 h-3" />
         </button>
       </form>
     </div>

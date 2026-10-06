@@ -1,84 +1,100 @@
 import React from 'react';
 import { Sliders, Cpu } from 'lucide-react';
-import type { ProtocolParameters, ProtocolType } from '../types/analyzer';
+import type { RealProtocolParameters, ProtocolType } from '../types/analyzer';
 
 interface ParameterPanelProps {
-  parameters: ProtocolParameters;
-  protocol: ProtocolType;
+  parameters: RealProtocolParameters;
+  protocol: ProtocolType | null;
 }
 
 export const ParameterPanel: React.FC<ParameterPanelProps> = ({
   parameters,
   protocol,
 }) => {
-  const renderParameters = () => {
+  const getDisplayItems = () => {
+    if (protocol === 'UART') {
+      return [
+        { label: 'PROTOCOL', value: 'UART TTL' },
+        { label: 'CHANNEL', value: parameters.channel || '—' },
+        { label: 'BAUD RATE', value: parameters.baudRate ? `${parameters.baudRate} baud` : '—' },
+        { label: 'FRAME FORMAT', value: parameters.format || '—' },
+        { label: 'IDLE LEVEL', value: parameters.idle || '—' },
+        { label: 'BIT PERIOD', value: parameters.bitPeriodUs ? `${parameters.bitPeriodUs} μs` : '—' },
+      ];
+    }
     if (protocol === 'I2C') {
       return [
-        { label: 'BUS SPEED', value: `${parameters.busSpeedKhz || 100} kHz` },
-        { label: 'SLAVE ADDRESS', value: parameters.addressHex || '0x27' },
-        { label: 'R/W MODE', value: parameters.rwMode || 'WRITE' },
-        { label: 'ACK STATE', value: parameters.ackState || 'ACK' },
-        { label: 'LOGIC LEVEL', value: `${parameters.logicLevelV.toFixed(1)} V` },
-        { label: 'FRAME LENGTH', value: `${parameters.estimatedFrameLenBits || 9} bits` },
+        { label: 'PROTOCOL', value: 'I²C Bus' },
+        { label: 'SDA', value: parameters.sdaChannel || '—' },
+        { label: 'SCL', value: parameters.sclChannel || '—' },
+        { label: 'CLOCK', value: parameters.clockHz ? `${parameters.clockHz / 1000} kHz` : '—' },
+        { label: 'ADDRESS', value: parameters.addressHex || '—' },
+        { label: 'READ/WRITE', value: parameters.rwMode || '—' },
+        { label: 'ACK/NACK', value: parameters.ackState !== undefined ? (parameters.ackState ? 'ACK' : 'NACK') : '—' },
       ];
     }
     if (protocol === 'SPI') {
       return [
-        { label: 'CLOCK FREQ', value: `${parameters.clockMhz || 1.0} MHz` },
-        { label: 'CPOL', value: `${parameters.cpol ?? 0}` },
-        { label: 'CPHA', value: `${parameters.cpha ?? 0}` },
-        { label: 'BIT ORDER', value: parameters.bitOrder || 'MSB FIRST' },
-        { label: 'DATA WIDTH', value: `${parameters.dataWidth || 8} bit` },
-        { label: 'LOGIC LEVEL', value: `${parameters.logicLevelV.toFixed(1)} V` },
+        { label: 'PROTOCOL', value: 'SPI Bus' },
+        { label: 'SCLK', value: parameters.sclkChannel || '—' },
+        { label: 'MOSI', value: parameters.mosiChannel || '—' },
+        { label: 'MISO', value: parameters.misoChannel || '—' },
+        { label: 'CS', value: parameters.csChannel || '—' },
+        { label: 'CLOCK', value: parameters.clockHzSpi ? `${parameters.clockHzSpi / 1000000} MHz` : '—' },
+        { label: 'MODE', value: parameters.spiMode !== undefined ? `Mode ${parameters.spiMode}` : '—' },
+        { label: 'CPOL', value: parameters.cpol !== undefined ? `${parameters.cpol}` : '—' },
+        { label: 'CPHA', value: parameters.cpha !== undefined ? `${parameters.cpha}` : '—' },
+        { label: 'BIT ORDER', value: parameters.bitOrder || '—' },
       ];
     }
     if (protocol === 'UNKNOWN') {
       return [
-        { label: 'DOMINANT FREQ', value: `${parameters.dominantFreqMhz || 2.4} MHz` },
-        { label: 'FRAME LENGTH', value: `${parameters.estimatedFrameLenBits || 16} bits` },
-        { label: 'LOGIC LEVEL', value: `${parameters.logicLevelV.toFixed(1)} V` },
-        { label: 'REPEATING PATTERN', value: 'DETECTED' },
-        { label: 'SIGNAL TYPE', value: 'UNCLASSIFIED' },
+        { label: 'PROTOCOL', value: 'UNKNOWN / CUSTOM' },
+        { label: 'ACTIVE CHANNELS', value: parameters.activeChannelsCount ? `${parameters.activeChannelsCount}` : '—' },
+        { label: 'IDLE STATE', value: parameters.idleState || '—' },
+        { label: 'TRANSITIONS', value: parameters.transitionCount !== undefined ? `${parameters.transitionCount}` : '—' },
+        { label: 'TIMING INFO', value: parameters.timingInfo || '—' },
       ];
     }
-    // UART Default
+
+    // Default fallback when no protocol identified
     return [
-      { label: 'BAUD RATE', value: `${parameters.baudRate || 115200} baud` },
-      { label: 'DATA BITS', value: `${parameters.dataBits || 8}` },
-      { label: 'PARITY', value: parameters.parity || 'NONE' },
-      { label: 'STOP BITS', value: `${parameters.stopBits || 1}` },
-      { label: 'LOGIC LEVEL', value: `${parameters.logicLevelV.toFixed(1)} V` },
-      { label: 'BIT TIME', value: `${parameters.bitTimeUs || 8.68} μs` },
+      { label: 'PROTOCOL', value: '—' },
+      { label: 'CHANNEL', value: '—' },
+      { label: 'CLOCK / BAUD', value: '—' },
+      { label: 'FORMAT', value: '—' },
+      { label: 'IDLE LEVEL', value: '—' },
+      { label: 'STATUS', value: 'WAITING FOR DATA' },
     ];
   };
 
-  const paramsList = renderParameters();
+  const items = getDisplayItems();
 
   return (
-    <div className="instrument-card p-4 bg-white border border-slate-200">
-      <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+    <div className="instrument-card p-3 font-mono text-xs">
+      <div className="flex items-center justify-between border-b border-instrument-border pb-2 mb-2">
         <div className="flex items-center space-x-2">
-          <Sliders className="w-4 h-4 text-sky-600" />
-          <span className="text-xs font-mono font-bold text-slate-900 uppercase">
-            AUTO-CONFIGURED PARAMETERS
+          <Sliders className="w-3.5 h-3.5 text-instrument-blue" />
+          <span className="font-bold text-instrument-textBright uppercase">
+            AUTOMATIC PARAMETER DETECTION
           </span>
         </div>
-        <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1 font-semibold">
-          <Cpu className="w-3 h-3 text-sky-600" /> {protocol} DECODER ACTIVE
+        <span className="text-[10px] text-instrument-textMuted flex items-center gap-1 font-semibold">
+          <Cpu className="w-3 h-3 text-instrument-blue" /> ESP32 #2 PARSER
         </span>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {paramsList.map((p, idx) => (
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+        {items.map((item, idx) => (
           <div
             key={idx}
-            className="p-2.5 bg-slate-50 rounded border border-slate-200 font-mono hover:border-slate-300 transition-all"
+            className="p-2 bg-instrument-bg rounded-sm border border-instrument-border"
           >
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1 font-semibold">
-              {p.label}
+            <span className="text-[9px] text-instrument-textMuted uppercase tracking-wider block font-semibold mb-0.5">
+              {item.label}
             </span>
-            <span className="text-sm font-bold text-slate-900 block">
-              {p.value}
+            <span className={`text-xs font-bold block truncate ${item.value === '—' ? 'text-instrument-textMuted' : 'text-instrument-textBright'}`}>
+              {item.value}
             </span>
           </div>
         ))}

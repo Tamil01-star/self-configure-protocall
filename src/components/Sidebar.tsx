@@ -2,22 +2,21 @@ import React from 'react';
 import { 
   LayoutDashboard, 
   Activity, 
-  Waves, 
   Search, 
   Table, 
   HeartPulse, 
-  AlertTriangle, 
-  HelpCircle, 
-  History, 
+  Cpu, 
   Settings,
-  Usb
+  Usb,
+  Radio,
+  Tv
 } from 'lucide-react';
-import type { NavigationTab, HardwareStatus } from '../types/analyzer';
+import type { NavigationTab, SystemHardwareStatus } from '../types/analyzer';
 
 interface SidebarProps {
   activeTab: NavigationTab;
   onSelectTab: (tab: NavigationTab) => void;
-  hardwareStatus: HardwareStatus;
+  hardwareStatus: SystemHardwareStatus;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -25,25 +24,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectTab,
   hardwareStatus
 }) => {
-  const menuItems: { id: NavigationTab; label: string; icon: React.ReactNode; badge?: string }[] = [
-    { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="w-4 h-4" /> },
-    { id: 'analyzer', label: 'Live Analyzer', icon: <Activity className="w-4 h-4 text-sky-600" /> },
-    { id: 'waveform', label: 'Waveform', icon: <Waves className="w-4 h-4" /> },
-    { id: 'detection', label: 'Protocol Detection', icon: <Search className="w-4 h-4" /> },
-    { id: 'decoded', label: 'Decoded Data', icon: <Table className="w-4 h-4" /> },
-    { id: 'health', label: 'Signal Health', icon: <HeartPulse className="w-4 h-4 text-emerald-600" /> },
-    { id: 'fault', label: 'Fault Diagnosis', icon: <AlertTriangle className="w-4 h-4 text-amber-600" /> },
-    { id: 'unknown', label: 'Unknown Protocol', icon: <HelpCircle className="w-4 h-4 text-purple-600" /> },
-    { id: 'history', label: 'Capture History', icon: <History className="w-4 h-4" /> },
-    { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
+  const menuItems: { id: NavigationTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'overview', label: 'OVERVIEW', icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
+    { id: 'capture', label: 'LIVE CAPTURE', icon: <Activity className="w-3.5 h-3.5 text-instrument-blue" /> },
+    { id: 'protocol', label: 'PROTOCOL', icon: <Search className="w-3.5 h-3.5" /> },
+    { id: 'decoded', label: 'DECODED DATA', icon: <Table className="w-3.5 h-3.5" /> },
+    { id: 'health', label: 'SIGNAL HEALTH', icon: <HeartPulse className="w-3.5 h-3.5 text-instrument-green" /> },
+    { id: 'hardware', label: 'HARDWARE', icon: <Cpu className="w-3.5 h-3.5 text-instrument-purple" /> },
+    { id: 'settings', label: 'SETTINGS', icon: <Settings className="w-3.5 h-3.5" /> },
   ];
 
   return (
-    <aside className="w-56 bg-white border-r border-slate-200 flex flex-col justify-between select-none shrink-0 h-[calc(100vh-3.5rem)]">
-      {/* Navigation Links */}
-      <div className="py-3 px-2 space-y-1">
-        <div className="px-3 py-1.5 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold">
-          INSTRUMENT MENU
+    <aside className="w-52 bg-instrument-panel border-r border-instrument-border flex flex-col justify-between select-none shrink-0 h-[calc(100vh-3.25rem)]">
+      {/* Main Navigation Links */}
+      <div className="py-2 px-2 space-y-1">
+        <div className="px-3 py-1.5 text-[10px] font-mono text-instrument-textMuted uppercase tracking-wider font-bold">
+          MENU
         </div>
 
         {menuItems.map((item) => {
@@ -52,50 +48,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => onSelectTab(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs font-mono transition-all ${
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-sm text-xs font-mono transition-colors ${
                 isActive
-                  ? 'bg-sky-50 text-sky-700 border border-sky-200 font-bold shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
+                  ? 'bg-instrument-bg text-instrument-blue border border-instrument-borderHighlight font-bold shadow-sm'
+                  : 'text-instrument-textSubtle hover:text-instrument-textBright hover:bg-instrument-bg border border-transparent'
               }`}
             >
-              <div className="flex items-center space-x-2.5">
-                {item.icon}
-                <span>{item.label}</span>
-              </div>
-              {item.badge && (
-                <span className="px-1.5 py-0.2 text-[9px] bg-slate-100 rounded text-slate-500 font-semibold border border-slate-200">
-                  {item.badge}
-                </span>
-              )}
+              {item.icon}
+              <span>{item.label}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Bottom Device Telemetry Box */}
-      <div className="p-3 m-2 bg-slate-50 rounded border border-slate-200 font-mono text-xs">
-        <div className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center justify-between mb-1.5 font-semibold">
-          <span>DEVICE STATUS</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-led" />
+      {/* Bottom Physical Hardware Status Telemetry */}
+      <div className="p-3 m-2 bg-instrument-bg rounded-sm border border-instrument-border font-mono text-[11px] space-y-2">
+        <div className="text-[10px] text-instrument-textMuted uppercase tracking-wider flex items-center justify-between font-bold border-b border-instrument-border pb-1">
+          <span>HARDWARE STACK</span>
+          <span className={`w-2 h-2 rounded-full ${hardwareStatus.esp32_2_connected ? 'bg-instrument-green animate-led' : 'bg-instrument-red'}`} />
         </div>
         
-        <div className="flex items-center space-x-2 text-slate-900 font-bold text-[11px] mb-1">
-          <Usb className="w-3.5 h-3.5 text-sky-600" />
-          <span>{hardwareStatus.deviceName}</span>
+        {/* ESP32 #2 Status */}
+        <div className="space-y-0.5">
+          <div className="flex items-center space-x-1.5 text-instrument-textBright font-bold">
+            <Usb className="w-3 h-3 text-instrument-blue shrink-0" />
+            <span>ESP32 #2 (Analyzer)</span>
+          </div>
+          <div className="text-[10px] pl-4 flex justify-between">
+            <span className="text-instrument-textMuted">USB Serial:</span>
+            <span className={hardwareStatus.esp32_2_connected ? 'text-instrument-green font-bold' : 'text-instrument-red'}>
+              {hardwareStatus.esp32_2_connected ? 'ONLINE' : 'OFFLINE'}
+            </span>
+          </div>
         </div>
 
-        <div className="text-[10px] text-slate-500 space-y-0.5">
-          <div className="flex justify-between">
-            <span>Connection:</span>
-            <span className="text-emerald-600 font-semibold">{hardwareStatus.connectionType}</span>
+        {/* ESP32 #1 Status */}
+        <div className="space-y-0.5">
+          <div className="flex items-center space-x-1.5 text-instrument-textBright font-bold">
+            <Radio className="w-3 h-3 text-instrument-amber shrink-0" />
+            <span>ESP32 #1 (Generator)</span>
           </div>
-          <div className="flex justify-between">
-            <span>Sampling:</span>
-            <span className="text-slate-900 font-semibold">{hardwareStatus.samplingRate}</span>
+          <div className="text-[10px] pl-4 flex justify-between">
+            <span className="text-instrument-textMuted">Signal DUT:</span>
+            <span className="text-instrument-textSubtle font-semibold">{hardwareStatus.esp32_1_status}</span>
           </div>
-          <div className="flex justify-between">
-            <span>Buffer:</span>
-            <span className="text-slate-900 font-semibold">{hardwareStatus.bufferKb} KB</span>
+        </div>
+
+        {/* 16x2 LCD Status */}
+        <div className="space-y-0.5">
+          <div className="flex items-center space-x-1.5 text-instrument-textBright font-bold">
+            <Tv className="w-3 h-3 text-instrument-purple shrink-0" />
+            <span>16×2 I²C LCD</span>
+          </div>
+          <div className="text-[10px] pl-4 flex justify-between">
+            <span className="text-instrument-textMuted">Local Display:</span>
+            <span className="text-instrument-textSubtle font-semibold">{hardwareStatus.lcd_status}</span>
           </div>
         </div>
       </div>
