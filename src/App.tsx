@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
+import { AllProtocolsMatrix } from './components/AllProtocolsMatrix';
 import { ProtocolStatus } from './components/ProtocolStatus';
 import { WaveformViewer } from './components/WaveformViewer';
 import { ParameterPanel } from './components/ParameterPanel';
@@ -278,9 +279,17 @@ export function App() {
             </div>
           )}
 
-          {/* TAB 1: OVERVIEW DASHBOARD */}
+          {/* TAB 1: OVERVIEW DASHBOARD (SINGLE SCREEN WORKSTATION) */}
           {activeTab === 'overview' && (
             <div className="space-y-4">
+              {/* 1. All Protocols Matrix View */}
+              <AllProtocolsMatrix
+                detectedProtocol={payload.protocol}
+                confidence={payload.confidence}
+                parameters={payload.parameters}
+                isConnected={hardwareStatus.esp32_2_connected}
+              />
+
               {/* 2. Protocol Identification Readout */}
               <ProtocolStatus
                 protocol={payload.protocol}

@@ -25,7 +25,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   hardwareStatus
 }) => {
   const menuItems: { id: NavigationTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'overview', label: 'OVERVIEW', icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
+    { id: 'overview', label: 'SINGLE SCREEN VIEW', icon: <LayoutDashboard className="w-3.5 h-3.5 text-instrument-blue" /> },
     { id: 'capture', label: 'LIVE CAPTURE', icon: <Activity className="w-3.5 h-3.5 text-instrument-blue" /> },
     { id: 'protocol', label: 'PROTOCOL', icon: <Search className="w-3.5 h-3.5" /> },
     { id: 'decoded', label: 'DECODED DATA', icon: <Table className="w-3.5 h-3.5" /> },
