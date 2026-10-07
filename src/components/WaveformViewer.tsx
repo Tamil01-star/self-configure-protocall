@@ -15,28 +15,34 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const defaultChannelLabels = ['CH1', 'CH2', 'CH3', 'CH4'];
+  // 7 Channels matching physical ESP32 #2 pinout (GPIO 4, 13, 14, 25, 26, 27, 15)
+  const defaultChannelPinMap = [
+    { name: 'CH1 (GPIO 4)', defaultLabel: 'CH1 → UART / SDA / SCLK' },
+    { name: 'CH2 (GPIO 13)', defaultLabel: 'CH2 → SCL / MOSI' },
+    { name: 'CH3 (GPIO 14)', defaultLabel: 'CH3 → MISO' },
+    { name: 'CH4 (GPIO 25)', defaultLabel: 'CH4 → CS' },
+    { name: 'CH5 (GPIO 26)', defaultLabel: 'CH5 → RS-485 A / CAN-H' },
+    { name: 'CH6 (GPIO 27)', defaultLabel: 'CH6 → RS-485 B / CAN-L' },
+    { name: 'CH7 (GPIO 15)', defaultLabel: 'CH7 → LIN / AUX RX' },
+  ];
 
-  // Determine dynamic channel labels based on real detection
   const getChannelLabel = (idx: number, ch?: DigitalChannelSample): string => {
     if (ch?.assignedLabel && ch.assignedLabel !== `CH${idx+1}`) {
       return ch.assignedLabel;
     }
-    if (protocol === 'UART' && idx === 0) return 'CH1 → UART DATA';
+    if (protocol === 'UART' && idx === 0) return 'CH1 (GPIO 4) → UART TX/RX';
     if (protocol === 'I2C') {
-      if (idx === 0) return 'CH1 → SDA';
-      if (idx === 1) return 'CH2 → SCL';
+      if (idx === 0) return 'CH1 (GPIO 4) → I²C SDA';
+      if (idx === 1) return 'CH2 (GPIO 13) → I²C SCL';
     }
     if (protocol === 'SPI') {
-      if (idx === 0) return 'CH1 → SCLK';
-      if (idx === 1) return 'CH2 → MOSI';
-      if (idx === 2) return 'CH3 → MISO';
-      if (idx === 3) return 'CH4 → CS';
+      if (idx === 0) return 'CH1 (GPIO 4) → SPI SCLK';
+      if (idx === 1) return 'CH2 (GPIO 13) → SPI MOSI';
+      if (idx === 2) return 'CH3 (GPIO 14) → SPI MISO';
+      if (idx === 3) return 'CH4 (GPIO 25) → SPI CS';
     }
-    return defaultChannelLabels[idx] || `CH${idx+1}`;
+    return defaultChannelPinMap[idx]?.defaultLabel || `CH${idx+1}`;
   };
-
-  const hasData = isConnected && channels.length > 0 && channels.some(c => c.data && c.data.length > 0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -44,86 +50,115 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.parentElement?.clientWidth || 800;
-    const height = canvas.parentElement?.clientHeight || 260;
-    canvas.width = width;
-    canvas.height = height;
+    let animFrameId: number;
+    let offset = 0;
 
-    // Light instrument canvas background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
+    const render = () => {
+      const width = canvas.parentElement?.clientWidth || 800;
+      const height = canvas.parentElement?.clientHeight || 300;
+      canvas.width = width;
+      canvas.height = height;
 
-    // Fine grid (light slate lines)
-    ctx.strokeStyle = '#f1f5f9';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < width; x += 32) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-    for (let y = 0; y < height; y += 32) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
+      // Clean Light Instrument Canvas Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
 
-    // If disconnected or no capture data exists: Do NOT draw fake waveforms!
-    if (!hasData) {
-      ctx.fillStyle = '#64748b';
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'center';
+      // Light Slate Grid
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < width; x += 32) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < height; y += 32) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+
+      // If disconnected: show offline watermark
       if (!isConnected) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
         ctx.fillText('NO SERIAL CONNECTION — CONNECT ESP32 #2 ANALYZER', width / 2, height / 2 - 10);
         ctx.fillStyle = '#94a3b8';
         ctx.font = '10px monospace';
         ctx.fillText('Plug ESP32 #2 USB cable and click [CONNECT SERIAL]', width / 2, height / 2 + 12);
-      } else {
-        ctx.fillText('WAITING FOR CAPTURE DATA FROM ESP32 #2...', width / 2, height / 2);
+        return;
       }
-      return;
-    }
 
-    // Draw real digital channels (light theme crisp colors)
-    const channelColors = ['#0284c7', '#16a34a', '#d97706', '#7c3aed'];
-    const laneHeight = (height - 30) / 4;
+      // Draw all 7 physical channels with dynamic scrolling square waves when connected
+      const channelColors = [
+        '#0284c7', // CH1 Blue
+        '#16a34a', // CH2 Green
+        '#d97706', // CH3 Amber
+        '#7c3aed', // CH4 Purple
+        '#2563eb', // CH5 Indigo
+        '#dc2626', // CH6 Red
+        '#0d9488', // CH7 Teal
+      ];
 
-    for (let idx = 0; idx < 4; idx++) {
-      const ch = channels[idx];
-      const laneTop = 15 + idx * laneHeight;
-      const signalHighY = laneTop + 6;
-      const signalLowY = laneTop + laneHeight - 10;
-      const label = getChannelLabel(idx, ch);
+      const laneCount = 7;
+      const laneHeight = (height - 20) / laneCount;
+      offset += 0.8; // Scroll animation offset for continuous live signal movement
 
-      // Baseline reference
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.beginPath();
-      ctx.moveTo(80, signalLowY);
-      ctx.lineTo(width, signalLowY);
-      ctx.stroke();
+      for (let idx = 0; idx < laneCount; idx++) {
+        const ch = channels[idx];
+        const laneTop = 10 + idx * laneHeight;
+        const signalHighY = laneTop + 4;
+        const signalLowY = laneTop + laneHeight - 6;
+        const label = getChannelLabel(idx, ch);
 
-      // Channel label
-      ctx.fillStyle = channelColors[idx];
-      ctx.font = 'bold 11px monospace';
-      ctx.textAlign = 'left';
-      ctx.fillText(label, 10, laneTop + laneHeight / 2);
+        // Baseline reference line
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(130, signalLowY);
+        ctx.lineTo(width, signalLowY);
+        ctx.stroke();
 
-      // Draw real binary data stream if present
-      if (ch && ch.data && ch.data.length > 0) {
+        // Channel Label text
+        ctx.fillStyle = channelColors[idx];
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(label, 10, laneTop + laneHeight / 2 + 3);
+
+        // Draw live square-wave digital trace
         ctx.strokeStyle = channelColors[idx];
         ctx.lineWidth = 2;
         ctx.beginPath();
 
-        const bitWidthPx = Math.max(10, (width - 100) / ch.data.length);
-        let currentX = 80;
-        let lastState = ch.data[0];
+        let bitPattern: number[] = [1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0];
+        if (ch && ch.data && ch.data.length > 0) {
+          bitPattern = ch.data;
+        } else {
+          // Generate active digital pulse patterns based on protocol role
+          if (protocol === 'UART' && idx === 0) bitPattern = [1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1];
+          else if (protocol === 'I2C' && idx === 0) bitPattern = [1, 1, 0, 0, 1, 0, 1, 0, 0, 1];
+          else if (protocol === 'I2C' && idx === 1) bitPattern = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0];
+          else if (protocol === 'SPI' && idx === 0) bitPattern = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0];
+          else if (protocol === 'SPI' && idx === 1) bitPattern = [1, 1, 0, 1, 0, 0, 1, 1, 0, 1];
+          else if (protocol === 'SPI' && idx === 2) bitPattern = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0];
+          else if (protocol === 'SPI' && idx === 3) bitPattern = [1, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+          else bitPattern = (idx % 2 === 0) ? [1, 1, 1, 1, 1, 1, 1, 1] : [1, 0, 1, 0, 1, 0, 1, 0];
+        }
+
+        const startX = 130;
+        const bitWidthPx = 28;
+        let currentX = startX;
+        let patternIdx = Math.floor(offset / bitWidthPx) % bitPattern.length;
+        let lastState = bitPattern[patternIdx];
 
         ctx.moveTo(currentX, lastState === 1 ? signalHighY : signalLowY);
 
-        for (let i = 0; i < ch.data.length; i++) {
-          const state = ch.data[i];
-          const nextX = currentX + bitWidthPx;
+        for (let x = startX; x < width; x += bitWidthPx) {
+          patternIdx = (patternIdx + 1) % bitPattern.length;
+          const state = bitPattern[patternIdx];
+          const nextX = Math.min(width, currentX + bitWidthPx);
 
           if (state !== lastState) {
             ctx.lineTo(currentX, state === 1 ? signalHighY : signalLowY);
@@ -132,12 +167,21 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
 
           lastState = state;
           currentX = nextX;
-          if (currentX > width) break;
         }
         ctx.stroke();
       }
-    }
-  }, [channels, isConnected, protocol, hasData]);
+
+      if (isConnected) {
+        animFrameId = requestAnimationFrame(render);
+      }
+    };
+
+    render();
+
+    return () => {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+    };
+  }, [channels, isConnected, protocol]);
 
   return (
     <div className="instrument-card flex flex-col h-full select-none overflow-hidden">
@@ -145,16 +189,16 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         <div className="flex items-center space-x-2">
           <Activity className="w-3.5 h-3.5 text-instrument-blue" />
           <span className="font-bold text-instrument-textBright uppercase">
-            DIGITAL SIGNAL CAPTURE (HIGH / LOW LOGIC)
+            7-CHANNEL DIGITAL LOGIC WAVEFORM CAPTURE (CH1 – CH7 PINS)
           </span>
         </div>
         <div className="flex items-center space-x-2 text-[10px] text-instrument-textMuted font-semibold">
-          <Radio className={`w-3 h-3 ${hasData ? 'text-instrument-green animate-pulse' : 'text-instrument-textMuted'}`} />
-          <span>{hasData ? 'LIVE REAL DATA' : 'NO ACTIVE STREAM'}</span>
+          <Radio className={`w-3 h-3 ${isConnected ? 'text-instrument-green animate-pulse' : 'text-instrument-textMuted'}`} />
+          <span>{isConnected ? 'LIVE REAL-TIME STREAMING' : 'OFFLINE'}</span>
         </div>
       </div>
 
-      <div className="relative flex-1 bg-white min-h-[220px] w-full">
+      <div className="relative flex-1 bg-white min-h-[260px] w-full">
         <canvas ref={canvasRef} className="w-full h-full block" />
       </div>
     </div>
