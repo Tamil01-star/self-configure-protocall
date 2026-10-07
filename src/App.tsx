@@ -11,6 +11,7 @@ import { SignalHealth } from './components/SignalHealth';
 import { FaultDiagnosis } from './components/FaultDiagnosis';
 import { ChannelMap } from './components/ChannelMap';
 import { HardwareStackPanel } from './components/HardwareStackPanel';
+import { ChannelParameterBreakdown } from './components/ChannelParameterBreakdown';
 import { UnknownProtocolPanel } from './components/UnknownProtocolPanel';
 import { EventTimeline } from './components/EventTimeline';
 import { AnalyzerConsole } from './components/AnalyzerConsole';
@@ -322,6 +323,14 @@ export function App() {
               <ParameterPanel
                 parameters={payload.parameters}
                 protocol={payload.protocol}
+              />
+
+              {/* 4. Signal Engineer Channel-Wise Breakdown (CH1 - CH7) */}
+              <ChannelParameterBreakdown
+                channels={payload.channels}
+                protocol={payload.protocol}
+                parameters={payload.parameters}
+                isConnected={hardwareStatus.esp32_2_connected}
               />
 
               {/* 5. Decoded Data Table */}
