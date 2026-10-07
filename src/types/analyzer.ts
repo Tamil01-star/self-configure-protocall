@@ -1,4 +1,4 @@
-export type ProtocolType = 'UART' | 'I2C' | 'SPI' | 'UNKNOWN';
+export type ProtocolType = 'UART' | 'I2C' | 'SPI' | 'RS232' | 'RS485' | 'CAN' | 'LIN' | 'UNKNOWN';
 
 export type AnalyzerState = 
   | 'DISCONNECTED'
@@ -21,18 +21,18 @@ export type NavigationTab =
   | 'settings';
 
 export interface DigitalChannelSample {
-  id: string; // 'CH1', 'CH2', 'CH3', 'CH4'
-  assignedLabel: string; // e.g., 'CH1', 'UART DATA', 'SDA', 'SCL', 'SCLK', 'MOSI', 'MISO', 'CS'
-  data: number[]; // 0s and 1s received from hardware
+  id: string;
+  assignedLabel: string;
+  data: number[];
 }
 
 export interface RealProtocolParameters {
   // Common
   channel?: string;
-  
-  // UART
+
+  // UART / RS232 / RS485
   baudRate?: number;
-  format?: string; // e.g. "8N1"
+  format?: string;
   idle?: 'HIGH' | 'LOW';
   bitPeriodUs?: number;
 
@@ -50,10 +50,15 @@ export interface RealProtocolParameters {
   misoChannel?: string;
   csChannel?: string;
   clockHzSpi?: number;
-  spiMode?: number; // 0, 1, 2, 3
+  spiMode?: number;
   cpol?: number;
   cpha?: number;
   bitOrder?: 'MSB' | 'LSB';
+
+  // CAN / LIN
+  canBitRate?: number;
+  canFrameId?: string;
+  linVersion?: string;
 
   // Unknown / Custom
   activeChannelsCount?: number;
@@ -73,7 +78,6 @@ export interface RealDecodedRow {
   dec: number;
   ascii: string;
   status: string;
-  // Protocol specific optional fields
   addressHex?: string;
   rw?: 'R' | 'W';
   ack?: boolean;

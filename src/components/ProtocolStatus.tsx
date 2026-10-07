@@ -49,9 +49,16 @@ export const ProtocolStatus: React.FC<ProtocolStatusProps> = ({
           </span>
           <div className="text-xl font-extrabold text-instrument-textBright flex items-center space-x-2">
             {protocol ? (
-              <span className="text-instrument-blue">{protocol === 'I2C' ? 'I²C Bus' : protocol}</span>
+              <span className="text-instrument-blue">
+                {protocol === 'I2C' ? 'I²C Bus'
+                  : protocol === 'RS232' ? 'RS-232'
+                  : protocol === 'RS485' ? 'RS-485'
+                  : protocol === 'CAN' ? 'CAN Bus'
+                  : protocol === 'LIN' ? 'LIN Bus'
+                  : protocol}
+              </span>
             ) : (
-              <span className="text-instrument-textMuted">UNKNOWN / NOT DETECTED</span>
+              <span className="text-instrument-textMuted">— NOT DETECTED —</span>
             )}
           </div>
         </div>

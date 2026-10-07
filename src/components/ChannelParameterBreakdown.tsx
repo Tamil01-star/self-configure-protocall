@@ -9,71 +9,117 @@ interface ChannelParameterBreakdownProps {
   isConnected: boolean;
 }
 
+/** Returns true only if the channel has real hardware bit transitions */
+function hasRealSignal(ch: DigitalChannelSample | undefined): boolean {
+  if (!ch || !Array.isArray(ch.data) || ch.data.length === 0) return false;
+  const first = ch.data[0];
+  return ch.data.some(v => v !== first);
+}
+
 export const ChannelParameterBreakdown: React.FC<ChannelParameterBreakdownProps> = ({
   channels,
   protocol,
   parameters,
   isConnected,
 }) => {
-  // Real Hardware Pin Map based on physical ESP32 #2 wiring
+  // Physical ESP32 #2 hardware pin map (7 input channels)
   const channelHardwareMap = [
-    { id: 'CH1', gpio: 'GPIO 4', defaultRole: 'CH1 (UART / SDA / SCLK)' },
-    { id: 'CH2', gpio: 'GPIO 13', defaultRole: 'CH2 (SCL / MOSI)' },
-    { id: 'CH3', gpio: 'GPIO 14', defaultRole: 'CH3 (MISO)' },
-    { id: 'CH4', gpio: 'GPIO 25', defaultRole: 'CH4 (CS)' },
-    { id: 'CH5', gpio: 'GPIO 26', defaultRole: 'CH5 (RS-485 A / CAN-H)' },
-    { id: 'CH6', gpio: 'GPIO 27', defaultRole: 'CH6 (RS-485 B / CAN-L)' },
-    { id: 'CH7', gpio: 'GPIO 15', defaultRole: 'CH7 (LIN / AUX RX)' },
+    { id: 'CH1', gpio: 'GPIO 4',  defaultRole: 'CH1 — General Input' },
+    { id: 'CH2', gpio: 'GPIO 13', defaultRole: 'CH2 — General Input' },
+    { id: 'CH3', gpio: 'GPIO 14', defaultRole: 'CH3 — General Input' },
+    { id: 'CH4', gpio: 'GPIO 25', defaultRole: 'CH4 — General Input' },
+    { id: 'CH5', gpio: 'GPIO 26', defaultRole: 'CH5 — General Input' },
+    { id: 'CH6', gpio: 'GPIO 27', defaultRole: 'CH6 — General Input' },
+    { id: 'CH7', gpio: 'GPIO 15', defaultRole: 'CH7 — General Input' },
   ];
 
-  // Helper to compute signal engineer parameters (a, b, c, d, e, f, g) per channel
   const getChannelMetrics = (idx: number) => {
     const hw = channelHardwareMap[idx];
     const chSample = channels[idx];
-    const active = isConnected && ((chSample && chSample.data && chSample.data.length > 0) || idx < (protocol === 'SPI' ? 4 : protocol === 'I2C' ? 2 : protocol === 'UART' ? 1 : 0));
+    const realSignal = isConnected && hasRealSignal(chSample);
 
-    // Role assignment (Param a)
+    // ── Role (Protocol-assigned label from hardware only) ─────────────────
     let role = hw.defaultRole;
-    if (protocol === 'UART' && idx === 0) role = 'UART DATA (TX / RX)';
-    else if (protocol === 'I2C') {
-      if (idx === 0) role = 'I²C SDA (Serial Data)';
-      if (idx === 1) role = 'I²C SCL (Serial Clock)';
+    if (chSample?.assignedLabel && chSample.assignedLabel !== hw.id) {
+      role = chSample.assignedLabel; // real label from ESP32 JSON
+    } else if (protocol === 'UART' && idx === 0) {
+      role = 'CH1 — UART DATA (TX / RX)';
+    } else if (protocol === 'I2C') {
+      if (idx === 0) role = 'CH1 — I²C SDA (Serial Data)';
+      if (idx === 1) role = 'CH2 — I²C SCL (Serial Clock)';
     } else if (protocol === 'SPI') {
-      if (idx === 0) role = 'SPI SCLK (Serial Clock)';
-      if (idx === 1) role = 'SPI MOSI (Master Out Slave In)';
-      if (idx === 2) role = 'SPI MISO (Master In Slave Out)';
-      if (idx === 3) role = 'SPI CS (Chip Select)';
+      if (idx === 0) role = 'CH1 — SPI SCLK (Clock)';
+      if (idx === 1) role = 'CH2 — SPI MOSI';
+      if (idx === 2) role = 'CH3 — SPI MISO';
+      if (idx === 3) role = 'CH4 — SPI CS';
+    } else if (protocol === 'RS485' || protocol === 'RS232') {
+      if (idx === 0) role = 'CH1 — RS-485/232 DATA A';
+      if (idx === 1) role = 'CH2 — RS-485/232 DATA B';
+    } else if (protocol === 'CAN') {
+      if (idx === 0) role = 'CH1 — CAN-H';
+      if (idx === 1) role = 'CH2 — CAN-L';
+    } else if (protocol === 'LIN') {
+      if (idx === 0) role = 'CH1 — LIN BUS';
     }
 
-    // Frequency (Param b)
-    let frequency = '0.00 Hz';
-    if (active) {
-      if (protocol === 'UART' && parameters.baudRate) frequency = `${(parameters.baudRate / 1000).toFixed(2)} kHz`;
-      else if (protocol === 'I2C' && parameters.clockHz) frequency = `${(parameters.clockHz / 1000).toFixed(2)} kHz`;
-      else if (protocol === 'SPI' && parameters.clockHzSpi) frequency = `${(parameters.clockHzSpi / 1000000).toFixed(2)} MHz`;
-      else frequency = '100.00 kHz';
+    // ── Signal Data from real hardware bits only ──────────────────────────
+    const data = chSample?.data ?? [];
+    const totalBits = data.length;
+    const highBits = data.filter(b => b === 1).length;
+
+    // a. Logic Voltage State — derived from real bits
+    let logicState = 'N/A';
+    if (realSignal && totalBits > 0) {
+      const lastBit = data[data.length - 1];
+      logicState = lastBit === 1 ? 'HIGH (3.3V)' : 'LOW (0.0V)';
+    } else if (isConnected) {
+      logicState = 'IDLE (No Signal)';
     }
 
-    // Bit Period / Min Pulse Width (Param c)
-    let bitPeriod = '—';
-    if (active) {
-      if (parameters.bitPeriodUs) bitPeriod = `${parameters.bitPeriodUs.toFixed(2)} μs`;
-      else if (protocol === 'I2C' && parameters.clockHz) bitPeriod = `${(1000000 / parameters.clockHz).toFixed(2)} μs`;
-      else if (protocol === 'UART' && parameters.baudRate) bitPeriod = `${(1000000 / parameters.baudRate).toFixed(2)} μs`;
-      else bitPeriod = '10.00 μs';
+    // b. Frequency — only from real hardware parameters
+    let frequency = 'N/A';
+    if (realSignal) {
+      if (protocol === 'UART' && idx === 0 && parameters.baudRate) {
+        frequency = `${(parameters.baudRate / 1000).toFixed(2)} kHz`;
+      } else if (protocol === 'I2C' && idx <= 1 && parameters.clockHz) {
+        frequency = `${(parameters.clockHz / 1000).toFixed(2)} kHz`;
+      } else if (protocol === 'SPI' && idx <= 3 && parameters.clockHzSpi) {
+        frequency = `${(parameters.clockHzSpi / 1_000_000).toFixed(3)} MHz`;
+      } else if ((protocol === 'RS232' || protocol === 'RS485') && parameters.baudRate) {
+        frequency = `${(parameters.baudRate / 1000).toFixed(2)} kHz`;
+      } else if (protocol === 'CAN' && parameters.canBitRate) {
+        frequency = `${(parameters.canBitRate / 1000).toFixed(0)} kbps`;
+      }
     }
 
-    // Logic Level (Param d)
-    let logicState = active ? (idx % 2 === 0 ? 'HIGH (3.3V)' : 'IDLE HIGH') : 'OFFLINE (0.0V)';
+    // c. Bit Period — only from real hardware parameters
+    let bitPeriod = 'N/A';
+    if (realSignal && parameters.bitPeriodUs) {
+      bitPeriod = `${parameters.bitPeriodUs.toFixed(2)} μs`;
+    } else if (realSignal && protocol === 'I2C' && parameters.clockHz) {
+      bitPeriod = `${(1_000_000 / parameters.clockHz).toFixed(2)} μs`;
+    } else if (realSignal && protocol === 'UART' && parameters.baudRate) {
+      bitPeriod = `${(1_000_000 / parameters.baudRate).toFixed(2)} μs`;
+    }
 
-    // Duty Cycle (Param e)
-    let dutyCycle = active ? (idx === 1 && protocol === 'I2C' ? '50.0%' : '48.5%') : '0.0%';
+    // d. Duty Cycle — computed from real bit data
+    let dutyCycle = 'N/A';
+    if (realSignal && totalBits > 0) {
+      dutyCycle = `${((highBits / totalBits) * 100).toFixed(1)}%`;
+    }
 
-    // Transition / Edge Density (Param f)
-    let edgeDensity = active ? (parameters.baudRate ? `${parameters.baudRate * 2} edges/s` : '200,000 edges/s') : '0 edges/s';
+    // e. Transition / Edge count from real bit data
+    let edgeDensity = 'N/A';
+    if (realSignal && totalBits > 1) {
+      let transitions = 0;
+      for (let i = 1; i < data.length; i++) {
+        if (data[i] !== data[i - 1]) transitions++;
+      }
+      edgeDensity = `${transitions} edges / ${totalBits} bits`;
+    }
 
-    // Jitter & Stability (Param g)
-    let stability = active ? '99.4% (±0.08 μs)' : 'N/A';
+    // f. Stability — N/A unless ESP32 sends it in health block
+    const stability = 'N/A';
 
     return {
       id: hw.id,
@@ -85,7 +131,7 @@ export const ChannelParameterBreakdown: React.FC<ChannelParameterBreakdownProps>
       dutyCycle,
       edgeDensity,
       stability,
-      active,
+      active: realSignal,
     };
   };
 
@@ -95,17 +141,16 @@ export const ChannelParameterBreakdown: React.FC<ChannelParameterBreakdownProps>
         <div className="flex items-center space-x-2">
           <Cpu className="w-4 h-4 text-instrument-blue" />
           <span className="font-bold text-instrument-textBright uppercase tracking-wider text-xs">
-            SIGNAL ENGINEER CHANNEL-WISE PARAMETER BREAKDOWN (CH1 – CH7 PINS)
+            SIGNAL ENGINEER CHANNEL-WISE PARAMETER BREAKDOWN (CH1 – CH7)
           </span>
         </div>
         <div className="flex items-center space-x-2 text-[11px]">
           <span className="px-2 py-0.5 bg-instrument-bg text-instrument-textSubtle rounded border border-instrument-border font-mono">
-            ESP32 #2 ANALYZER HARDWARE MAP
+            ESP32 #2 HARDWARE MAP
           </span>
         </div>
       </div>
 
-      {/* Grid of CH1 through CH7 Channel Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-2.5">
         {channelHardwareMap.map((hw, idx) => {
           const metrics = getChannelMetrics(idx);
@@ -119,7 +164,7 @@ export const ChannelParameterBreakdown: React.FC<ChannelParameterBreakdownProps>
                   : 'bg-instrument-bg border-instrument-border opacity-75'
               }`}
             >
-              {/* Channel & GPIO Pin Header */}
+              {/* Channel Header */}
               <div className="flex items-center justify-between border-b border-instrument-border/60 pb-1.5 mb-2">
                 <div className="flex items-center space-x-1.5">
                   <span className="px-1.5 py-0.5 bg-instrument-blue text-white rounded font-mono font-bold text-[10px]">
@@ -137,9 +182,8 @@ export const ChannelParameterBreakdown: React.FC<ChannelParameterBreakdownProps>
                 {metrics.role}
               </div>
 
-              {/* Important Parameters for Signal Engineer (a, b, c, d, e, f, g) */}
+              {/* Parameters — real values only, N/A when not available */}
               <div className="space-y-1 text-[10px] font-mono">
-                {/* a. Logic Voltage State */}
                 <div className="flex justify-between items-center">
                   <span className="text-instrument-textMuted">a. State:</span>
                   <span className={`font-bold ${metrics.active ? 'text-instrument-green' : 'text-instrument-textMuted'}`}>
@@ -147,36 +191,38 @@ export const ChannelParameterBreakdown: React.FC<ChannelParameterBreakdownProps>
                   </span>
                 </div>
 
-                {/* b. Frequency / Data Rate */}
                 <div className="flex justify-between items-center">
-                  <span className="text-instrument-textMuted">b. Freq (f):</span>
-                  <span className="font-bold text-instrument-textBright">{metrics.frequency}</span>
+                  <span className="text-instrument-textMuted">b. Freq:</span>
+                  <span className={`font-bold ${metrics.frequency !== 'N/A' ? 'text-instrument-textBright' : 'text-instrument-textMuted'}`}>
+                    {metrics.frequency}
+                  </span>
                 </div>
 
-                {/* c. Min Bit Period (t_min) */}
                 <div className="flex justify-between items-center">
-                  <span className="text-instrument-textMuted">c. Period (t):</span>
-                  <span className="font-bold text-instrument-blue">{metrics.bitPeriod}</span>
+                  <span className="text-instrument-textMuted">c. Period:</span>
+                  <span className={`font-bold ${metrics.bitPeriod !== 'N/A' ? 'text-instrument-blue' : 'text-instrument-textMuted'}`}>
+                    {metrics.bitPeriod}
+                  </span>
                 </div>
 
-                {/* d. Duty Cycle (%) */}
                 <div className="flex justify-between items-center">
-                  <span className="text-instrument-textMuted">d. Duty Cycle:</span>
-                  <span className="font-bold text-instrument-textSubtle">{metrics.dutyCycle}</span>
+                  <span className="text-instrument-textMuted">d. Duty:</span>
+                  <span className={`font-bold ${metrics.dutyCycle !== 'N/A' ? 'text-instrument-textSubtle' : 'text-instrument-textMuted'}`}>
+                    {metrics.dutyCycle}
+                  </span>
                 </div>
 
-                {/* e. Transition / Edge Density */}
                 <div className="flex justify-between items-center">
-                  <span className="text-instrument-textMuted">e. Edge Density:</span>
-                  <span className="font-bold text-instrument-purple truncate max-w-[80px]" title={metrics.edgeDensity}>
+                  <span className="text-instrument-textMuted">e. Edges:</span>
+                  <span className={`font-bold truncate max-w-[80px] ${metrics.edgeDensity !== 'N/A' ? 'text-instrument-purple' : 'text-instrument-textMuted'}`}
+                    title={metrics.edgeDensity}>
                     {metrics.edgeDensity}
                   </span>
                 </div>
 
-                {/* f. Timing Stability & Jitter */}
                 <div className="flex justify-between items-center">
-                  <span className="text-instrument-textMuted">f. Stability:</span>
-                  <span className="font-bold text-instrument-green truncate max-w-[75px]" title={metrics.stability}>
+                  <span className="text-instrument-textMuted">f. Jitter:</span>
+                  <span className="font-bold text-instrument-textMuted">
                     {metrics.stability}
                   </span>
                 </div>

@@ -31,10 +31,12 @@ export const FaultDiagnosis: React.FC<FaultDiagnosisProps> = ({ health, isConnec
           </div>
           <div>
             <span className="font-bold text-instrument-green uppercase block">
-              NO HARDWARE OR TIMING FAULTS REPORTED BY ESP32 #2
+              NO FAULTS REPORTED BY ESP32 #2
             </span>
             <span className="text-[10px] text-instrument-textMuted font-medium block">
-              Framing errors: 0 | Timing jitter: Nominal | Signal edges locked.
+              {isConnected
+                ? `Valid frames: ${health.validFrames ?? 'N/A'} | Errors: ${health.errorCount ?? 'N/A'} | Timing: ${health.timingConsistencyPercent !== null ? health.timingConsistencyPercent + '%' : 'N/A'}`
+                : 'Connect ESP32 #2 to see live diagnostics.'}
             </span>
           </div>
         </div>

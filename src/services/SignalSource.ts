@@ -133,7 +133,11 @@ export class SerialHardwareDriver {
 
     const protocolStr = (json.protocol || '').toUpperCase();
     let protocol: ProtocolType | null = null;
-    if (protocolStr.includes('UART')) protocol = 'UART';
+    if (protocolStr.includes('RS485') || protocolStr.includes('RS-485')) protocol = 'RS485';
+    else if (protocolStr.includes('RS232') || protocolStr.includes('RS-232')) protocol = 'RS232';
+    else if (protocolStr.includes('CAN')) protocol = 'CAN';
+    else if (protocolStr.includes('LIN')) protocol = 'LIN';
+    else if (protocolStr.includes('UART')) protocol = 'UART';
     else if (protocolStr.includes('I2C') || protocolStr.includes('I²C')) protocol = 'I2C';
     else if (protocolStr.includes('SPI')) protocol = 'SPI';
     else if (protocolStr.includes('UNKNOWN')) protocol = 'UNKNOWN';
@@ -145,6 +149,9 @@ export class SerialHardwareDriver {
     const clockHzSpi = json.clockSpi || json.spiClock || json.clock_frequency_spi;
     const addressHex = json.address || json.addressHex;
     const bitPeriodUs = json.bitPeriodUs || json.bit_period || (baudRate ? (1000000 / baudRate) : undefined);
+    const canBitRate = json.canBitRate || json.can_bit_rate || json.bitRate;
+    const canFrameId = json.canFrameId || json.frame_id || json.can_id;
+    const linVersion = json.linVersion || json.lin_version || json.version;
 
     // ── CHANNELS: ONLY what the ESP32 hardware actually sends ──────────────
     // NO synthetic / fabricated data. If ESP32 does not send ch.data, the channel stays empty.
@@ -212,6 +219,9 @@ export class SerialHardwareDriver {
         uartScore: json.uartScore,
         i2cScore: json.i2cScore,
         spiScore: json.spiScore,
+        canBitRate,
+        canFrameId,
+        linVersion,
       },
       channels,
       decodedRows,

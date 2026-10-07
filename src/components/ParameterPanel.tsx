@@ -19,7 +19,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
         { label: 'BAUD RATE', value: parameters.baudRate ? `${parameters.baudRate} baud` : '—' },
         { label: 'FRAME FORMAT', value: parameters.format || '—' },
         { label: 'IDLE LEVEL', value: parameters.idle || '—' },
-        { label: 'BIT PERIOD', value: parameters.bitPeriodUs ? `${parameters.bitPeriodUs} μs` : '—' },
+        { label: 'BIT PERIOD', value: parameters.bitPeriodUs ? `${parameters.bitPeriodUs.toFixed(2)} μs` : '—' },
       ];
     }
     if (protocol === 'I2C') {
@@ -40,11 +40,41 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
         { label: 'MOSI', value: parameters.mosiChannel || '—' },
         { label: 'MISO', value: parameters.misoChannel || '—' },
         { label: 'CS', value: parameters.csChannel || '—' },
-        { label: 'CLOCK', value: parameters.clockHzSpi ? `${parameters.clockHzSpi / 1000000} MHz` : '—' },
+        { label: 'CLOCK', value: parameters.clockHzSpi ? `${parameters.clockHzSpi / 1_000_000} MHz` : '—' },
         { label: 'MODE', value: parameters.spiMode !== undefined ? `Mode ${parameters.spiMode}` : '—' },
         { label: 'CPOL', value: parameters.cpol !== undefined ? `${parameters.cpol}` : '—' },
         { label: 'CPHA', value: parameters.cpha !== undefined ? `${parameters.cpha}` : '—' },
         { label: 'BIT ORDER', value: parameters.bitOrder || '—' },
+      ];
+    }
+    if (protocol === 'RS232' || protocol === 'RS485') {
+      return [
+        { label: 'PROTOCOL', value: protocol === 'RS232' ? 'RS-232' : 'RS-485' },
+        { label: 'BAUD RATE', value: parameters.baudRate ? `${parameters.baudRate} baud` : '—' },
+        { label: 'FRAME FORMAT', value: parameters.format || '—' },
+        { label: 'BIT PERIOD', value: parameters.bitPeriodUs ? `${parameters.bitPeriodUs.toFixed(2)} μs` : '—' },
+        { label: 'CHANNEL', value: parameters.channel || '—' },
+        { label: 'IDLE LEVEL', value: parameters.idle || '—' },
+      ];
+    }
+    if (protocol === 'CAN') {
+      return [
+        { label: 'PROTOCOL', value: 'CAN Bus' },
+        { label: 'BIT RATE', value: parameters.canBitRate ? `${parameters.canBitRate} bit/s` : '—' },
+        { label: 'FRAME ID', value: parameters.canFrameId || '—' },
+        { label: 'CAN-H CH', value: parameters.channel || '—' },
+        { label: 'TRANSITIONS', value: parameters.transitionCount !== undefined ? `${parameters.transitionCount}` : '—' },
+        { label: 'TIMING INFO', value: parameters.timingInfo || '—' },
+      ];
+    }
+    if (protocol === 'LIN') {
+      return [
+        { label: 'PROTOCOL', value: 'LIN Bus' },
+        { label: 'LIN VERSION', value: parameters.linVersion || '—' },
+        { label: 'BAUD RATE', value: parameters.baudRate ? `${parameters.baudRate} baud` : '—' },
+        { label: 'CHANNEL', value: parameters.channel || '—' },
+        { label: 'TRANSITIONS', value: parameters.transitionCount !== undefined ? `${parameters.transitionCount}` : '—' },
+        { label: 'TIMING INFO', value: parameters.timingInfo || '—' },
       ];
     }
     if (protocol === 'UNKNOWN') {
@@ -57,7 +87,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
       ];
     }
 
-    // Default fallback when no protocol identified
+    // No protocol detected yet
     return [
       { label: 'PROTOCOL', value: '—' },
       { label: 'CHANNEL', value: '—' },
