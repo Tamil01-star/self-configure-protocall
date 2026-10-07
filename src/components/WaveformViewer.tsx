@@ -64,9 +64,6 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animFrameId: number;
-    let offset = 0;
-
     const render = () => {
       const width = canvas.parentElement?.clientWidth || 800;
       const height = canvas.parentElement?.clientHeight || 300;
@@ -110,9 +107,6 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
       const laneCount = targetIndices.length;
       const laneHeight = (height - 20) / laneCount;
 
-      // Only scroll when real hardware transitions are present
-      if (anyRealSignal) offset += 0.8;
-
       for (let i = 0; i < laneCount; i++) {
         const idx = targetIndices[i];
         const expectedId = `CH${idx + 1}`;
@@ -155,7 +149,7 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         const startX = 150;
         const bitWidthPx = 28;
         let currentX = startX;
-        let patternIdx = Math.floor(offset / bitWidthPx) % bitPattern.length;
+        let patternIdx = 0; // Fixed view: always start from the first captured bit
         let lastState = bitPattern[patternIdx];
 
         ctx.moveTo(currentX, lastState === 1 ? signalHighY : signalLowY);
@@ -181,16 +175,10 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
           ctx.fillText('IDLE', (150 + width) / 2, signalLowY - 4);
         }
       }
-
-      if (isConnected) {
-        animFrameId = requestAnimationFrame(render);
-      }
     };
 
     render();
-
-    return () => { if (animFrameId) cancelAnimationFrame(animFrameId); };
-  }, [channels, isConnected, protocol, anyRealSignal]);
+  }, [channels, isConnected, protocol, anyRealSignal, focusChannel]);
 
   return (
     <div className="instrument-card flex flex-col h-full select-none overflow-hidden">
