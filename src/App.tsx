@@ -124,7 +124,7 @@ export function App() {
     if (!hardwareStatus.esp32_2_connected) return;
     try {
       await driverRef.current.sendCommand('START');
-      setPayload(prev => ({ ...prev, state: 'CAPTURING' }));
+      // DO NOT fake state here. Wait for ESP32 to actually send telemetry.
     } catch (err: any) {
       alert(`Command Error: ${err.message}`);
     }
@@ -134,7 +134,7 @@ export function App() {
     if (!hardwareStatus.esp32_2_connected) return;
     try {
       await driverRef.current.sendCommand('STOP');
-      setPayload(prev => ({ ...prev, state: 'IDLE' }));
+      // DO NOT fake state here. Wait for ESP32 to actually send telemetry.
     } catch (err: any) {
       alert(`Command Error: ${err.message}`);
     }
