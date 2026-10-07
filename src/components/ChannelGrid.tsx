@@ -48,12 +48,14 @@ export const ChannelGrid: React.FC<ChannelGridProps> = ({
           isParamAssigned = parameters.sclkChannel === hw.id || parameters.mosiChannel === hw.id || parameters.misoChannel === hw.id || parameters.csChannel === hw.id;
         }
 
-        // A channel is active if it has transitioning data, OR if a protocol is detected
-        // and this channel is included in the payload channels list OR parameters.
+        // A channel has active signal/protocol if it has transitions, or is assigned by protocol parameters
         const hasTransitions = hasRealSignal(chSample);
-        const isAssigned = (chSample !== undefined || isParamAssigned) && protocol !== null;
-        const active = isConnected && (hasTransitions || isAssigned);
+        const isAssigned = chSample !== undefined || isParamAssigned;
+        const hasSignal = isConnected && (hasTransitions || isAssigned);
         
+        // The user should be able to click into ANY channel as long as the ESP is connected
+        const isClickable = isConnected;
+
         let role = chSample?.assignedLabel;
         if (!role && isParamAssigned && protocol) {
           if (['UART', 'RS232', 'RS485'].includes(protocol)) role = `${protocol} DATA`;
@@ -72,53 +74,57 @@ export const ChannelGrid: React.FC<ChannelGridProps> = ({
           <div
             key={hw.id}
             onClick={() => {
-              if (active) onChannelClick(hw.id);
+              if (isClickable) onChannelClick(hw.id);
             }}
             className={`instrument-card p-4 flex flex-col justify-between transition-all ${
-              active
-                ? 'cursor-pointer hover:border-instrument-blue hover:shadow-md bg-white border-instrument-blue border-2 ring-1 ring-instrument-blue/30'
+              isClickable
+                ? hasSignal 
+                    ? 'cursor-pointer hover:border-instrument-blue hover:shadow-md bg-white border-instrument-blue border-2 ring-1 ring-instrument-blue/30'
+                    : 'cursor-pointer hover:border-instrument-blue/50 bg-instrument-bg border-instrument-border'
                 : 'cursor-not-allowed bg-instrument-bg border-instrument-border opacity-70'
             }`}
           >
             <div className="flex items-center justify-between mb-3 border-b border-instrument-border/60 pb-2">
               <div className="flex items-center space-x-2">
-                <span className="px-2 py-1 bg-instrument-blue text-white rounded font-mono font-bold text-sm">
+                <span className={`px-2 py-1 rounded font-mono font-bold text-sm ${hasSignal ? 'bg-instrument-blue text-white' : 'bg-instrument-panelHeader text-instrument-textBright border border-instrument-border'}`}>
                   {hw.id}
                 </span>
                 <span className="font-mono font-bold text-xs text-instrument-textBright">
                   {hw.gpio}
                 </span>
               </div>
-              <span className={`w-3 h-3 rounded-full ${active ? 'bg-instrument-green animate-led' : 'bg-slate-300'}`} />
+              <span className={`w-3 h-3 rounded-full ${hasSignal ? 'bg-instrument-green animate-led' : 'bg-slate-300'}`} title={hasSignal ? "Signal Detected" : "No Signal"} />
             </div>
 
             <div className="space-y-2 font-mono text-xs">
               <div className="flex justify-between items-center">
                 <span className="text-instrument-textMuted">Role:</span>
-                <span className="font-bold text-instrument-blue truncate max-w-[120px]" title={role}>
+                <span className={`font-bold truncate max-w-[120px] ${hasSignal ? 'text-instrument-blue' : 'text-instrument-textMuted'}`} title={role}>
                   {role}
                 </span>
               </div>
               
               <div className="flex justify-between items-center">
                 <span className="text-instrument-textMuted">Status:</span>
-                <span className={`font-bold ${active ? 'text-instrument-green' : 'text-instrument-textMuted'}`}>
-                  {active ? (protocol || 'ACTIVE') : 'IDLE'}
+                <span className={`font-bold ${hasSignal ? 'text-instrument-green' : 'text-instrument-textMuted'}`}>
+                  {hasSignal ? (protocol || 'ACTIVE') : 'IDLE'}
                 </span>
               </div>
             </div>
 
             <div className="mt-4 pt-3 border-t border-instrument-border flex justify-end">
               <button
-                disabled={!active}
+                disabled={!isClickable}
                 className={`flex items-center space-x-1 text-[11px] font-bold px-3 py-1.5 rounded transition-colors ${
-                  active 
-                    ? 'bg-instrument-blue text-white hover:bg-sky-600' 
+                  isClickable 
+                    ? hasSignal
+                        ? 'bg-instrument-blue text-white hover:bg-sky-600'
+                        : 'bg-instrument-panelHeader text-instrument-textBright border border-instrument-border hover:bg-instrument-border'
                     : 'bg-instrument-panelHeader text-instrument-textMuted cursor-not-allowed'
                 }`}
               >
                 <Activity className="w-3.5 h-3.5" />
-                <span>{active ? 'VIEW OUTPUT' : 'NO SIGNAL'}</span>
+                <span>{hasSignal ? 'VIEW OUTPUT' : 'MONITOR'}</span>
               </button>
             </div>
           </div>
