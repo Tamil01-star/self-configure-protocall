@@ -34,9 +34,15 @@ export const ChannelGrid: React.FC<ChannelGridProps> = ({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-      {channelHardwareMap.map((hw, idx) => {
-        const chSample = channels[idx];
-        const active = isConnected && hasRealSignal(chSample);
+      {channelHardwareMap.map((hw) => {
+        const chSample = channels.find(c => c.id === hw.id);
+        
+        // A channel is active if it has transitioning data, OR if a protocol is detected
+        // and this channel is included in the payload (meaning the ESP32 assigned it a role).
+        const hasTransitions = hasRealSignal(chSample);
+        const isAssigned = chSample !== undefined && protocol !== null;
+        const active = isConnected && (hasTransitions || isAssigned);
+        
         const role = chSample?.assignedLabel || hw.id;
 
         return (

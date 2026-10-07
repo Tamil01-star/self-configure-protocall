@@ -108,12 +108,17 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
       if (anyRealSignal) offset += 0.8;
 
       for (let idx = 0; idx < laneCount; idx++) {
-        const ch = channels[idx];
+        const expectedId = `CH${idx + 1}`;
+        const ch = channels.find(c => c.id === expectedId);
+        
         const laneTop = 10 + idx * laneHeight;
         const signalHighY = laneTop + 4;
         const signalLowY = laneTop + laneHeight - 6;
         const label = getChannelLabel(idx, ch);
-        const chActive = hasRealSignal(ch);
+        
+        // Also check if protocol has assigned this channel
+        const isAssigned = ch !== undefined && protocol !== null;
+        const chActive = hasRealSignal(ch) || isAssigned;
 
         // Baseline reference line
         ctx.strokeStyle = '#e2e8f0';
