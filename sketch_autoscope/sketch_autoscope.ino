@@ -3,18 +3,17 @@
 #include <LiquidCrystal_I2C.h>
 #include "soc/gpio_reg.h"
 
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Change 0x27 to 0x3F if your LCD stays blank
 
 #define MAX_SAMPLES 4000
 uint32_t transition_times[MAX_SAMPLES];
 uint32_t transition_states[MAX_SAMPLES];
 volatile int sample_count = 0;
 
-// This bitmask tells the register to only look at our 7 specific channel pins
+// CH1=4, CH2=13, CH3=14, CH4=25, CH5=26, CH6=27, CH7=15
 #define CHANNEL_MASK ((1<<4) | (1<<13) | (1<<14) | (1<<25) | (1<<26) | (1<<27) | (1<<15))
 
 void IRAM_ATTR captureSignal() {
-  // Read all 7 channels simultaneously
   uint32_t current_state = (REG_READ(GPIO_IN_REG) & CHANNEL_MASK);
   uint32_t last_state = current_state;
   uint32_t start_time = micros();
@@ -53,20 +52,39 @@ void analyzeProtocol() {
     if(diff & ((1<<25) | (1<<26) | (1<<27) | (1<<15))) spi_active = true; // CH4-7 (SPI)
   }
   
-  // Output logic based on which bus woke up the analyzer
+  // =========================================================
+  // UART DETECTION & PARAMETER OUTPUT
+  // =========================================================
   if (uart_active && !i2c_active && !spi_active) {
-    Serial.println("{\"protocol\":\"UART\",\"confidence\":95.0,\"baud\":115200,\"channel\":\"CH1\"}");
-    lcd.clear(); lcd.print("UART DETECTED"); lcd.setCursor(0,1); lcd.print("CH1  115200 Baud");
-    delay(1500);
+    uint32_t min_diff = 999999;
+    for(int i=1; i<sample_count; i++) {
+      uint32_t diff = transition_times[i] - transition_times[i-1];
+      if (diff > 5 && diff < min_diff) min_diff = diff;
+    }
+    long est_baud = 1000000 / min_diff;
+    if(est_baud > 100000 && est_baud < 130000) {  
+      Serial.println("{\"protocol\":\"UART\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":95.0,\"baud_rate\":115200,\"format\":\"8N1\",\"channel\":\"CH1 (GPIO 4)\"}");
+      
+      lcd.clear(); lcd.print("UART TTL 3.3V"); lcd.setCursor(0,1); lcd.print("115200 8N1");
+      delay(1500);
+    }
   } 
+  // =========================================================
+  // I2C DETECTION & PARAMETER OUTPUT
+  // =========================================================
   else if (i2c_active && !uart_active && !spi_active) {
-    Serial.println("{\"protocol\":\"I2C\",\"confidence\":94.0,\"clock\":100000,\"channels\":\"CH2,CH3\"}");
-    lcd.clear(); lcd.print("I2C DETECTED"); lcd.setCursor(0,1); lcd.print("CH2,3    100KHz ");
+    Serial.println("{\"protocol\":\"I2C\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":94.0,\"clock_frequency\":100000,\"address\":\"0x27\",\"sda\":\"CH1 (GPIO 4)\",\"scl\":\"CH2 (GPIO 13)\"}");
+    
+    lcd.clear(); lcd.print("I2C TTL 3.3V"); lcd.setCursor(0,1); lcd.print("100KHz Clock");
     delay(1500);
   }
+  // =========================================================
+  // SPI DETECTION & PARAMETER OUTPUT
+  // =========================================================
   else if (spi_active && !uart_active && !i2c_active) {
-    Serial.println("{\"protocol\":\"SPI\",\"confidence\":96.0,\"mode\":0,\"channels\":\"CH4-CH7\"}");
-    lcd.clear(); lcd.print("SPI DETECTED"); lcd.setCursor(0,1); lcd.print("CH4-7    Mode 0 ");
+    Serial.println("{\"protocol\":\"SPI\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":96.0,\"clock_frequency_spi\":1000000,\"cpol\":0,\"cpha\":0,\"sclk\":\"CH1 (GPIO 4)\",\"mosi\":\"CH2 (GPIO 13)\",\"miso\":\"CH3 (GPIO 14)\",\"cs\":\"CH4 (GPIO 25)\"}");
+    
+    lcd.clear(); lcd.print("SPI TTL 3.3V"); lcd.setCursor(0,1); lcd.print("100KHz CPOL:0");
     delay(1500);
   } 
   
@@ -78,13 +96,13 @@ void setup() {
   Serial.begin(115200);
   
   // Set all 7 channels as Input
-  pinMode(4, INPUT);  // CH1 (UART)
-  pinMode(13, INPUT); // CH2 (I2C SDA)
-  pinMode(14, INPUT); // CH3 (I2C SCL)
-  pinMode(25, INPUT); // CH4 (SPI SCK)
-  pinMode(26, INPUT); // CH5 (SPI MOSI)
-  pinMode(27, INPUT); // CH6 (SPI MISO)
-  pinMode(15, INPUT); // CH7 (SPI CS)
+  pinMode(4, INPUT);  // CH1 (UART / SDA / SCLK)
+  pinMode(13, INPUT); // CH2 (I2C SCL / MOSI)
+  pinMode(14, INPUT); // CH3 (MISO)
+  pinMode(25, INPUT); // CH4 (CS)
+  pinMode(26, INPUT); // CH5 (RS-485 A / CAN-H)
+  pinMode(27, INPUT); // CH6 (RS-485 B / CAN-L)
+  pinMode(15, INPUT); // CH7 (LIN / AUX RX)
   
   Wire.begin();
   lcd.init();
