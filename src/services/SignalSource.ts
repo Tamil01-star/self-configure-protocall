@@ -174,8 +174,8 @@ export class SerialHardwareDriver {
     // NO synthetic / fabricated data. If ESP32 does not send ch.data, the channel stays empty.
     const channels = Array.isArray(json.channels)
       ? json.channels.map((ch: any) => ({
-          id: ch.id || 'CH1',
-          assignedLabel: ch.assignedLabel || ch.label || ch.id || 'CH1',
+          id: normalizeChannelId(ch.id || ch.channel) || 'CH1',
+          assignedLabel: ch.assignedLabel || ch.label || normalizeChannelId(ch.id || ch.channel) || 'CH1',
           data: Array.isArray(ch.data) && ch.data.length > 0 ? ch.data : [],
         }))
       : [];
@@ -185,7 +185,7 @@ export class SerialHardwareDriver {
       ? json.decoded.map((d: any, idx: number) => ({
           id: d.id || `${idx}`,
           timeMs: typeof d.timeMs === 'number' ? d.timeMs : idx * 0.087,
-          channel: d.channel || 'CH1',
+          channel: normalizeChannelId(d.channel) || 'CH1',
           hex: d.hex || '0x00',
           dec: typeof d.dec === 'number' ? d.dec : 0,
           ascii: d.ascii || '?',
