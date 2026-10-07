@@ -19,6 +19,7 @@ function hasRealSignal(ch: DigitalChannelSample | undefined): boolean {
 export const ChannelGrid: React.FC<ChannelGridProps> = ({
   channels,
   protocol,
+  parameters,
   isConnected,
   onChannelClick,
 }) => {
@@ -37,13 +38,35 @@ export const ChannelGrid: React.FC<ChannelGridProps> = ({
       {channelHardwareMap.map((hw) => {
         const chSample = channels.find(c => c.id === hw.id);
         
+        // Check if the protocol explicitly assigned this channel via parameters
+        let isParamAssigned = false;
+        if (protocol === 'UART' || protocol === 'RS232' || protocol === 'RS485' || protocol === 'CAN' || protocol === 'LIN') {
+          isParamAssigned = parameters.channel === hw.id;
+        } else if (protocol === 'I2C') {
+          isParamAssigned = parameters.sdaChannel === hw.id || parameters.sclChannel === hw.id;
+        } else if (protocol === 'SPI') {
+          isParamAssigned = parameters.sclkChannel === hw.id || parameters.mosiChannel === hw.id || parameters.misoChannel === hw.id || parameters.csChannel === hw.id;
+        }
+
         // A channel is active if it has transitioning data, OR if a protocol is detected
-        // and this channel is included in the payload (meaning the ESP32 assigned it a role).
+        // and this channel is included in the payload channels list OR parameters.
         const hasTransitions = hasRealSignal(chSample);
-        const isAssigned = chSample !== undefined && protocol !== null;
+        const isAssigned = (chSample !== undefined || isParamAssigned) && protocol !== null;
         const active = isConnected && (hasTransitions || isAssigned);
         
-        const role = chSample?.assignedLabel || hw.id;
+        let role = chSample?.assignedLabel;
+        if (!role && isParamAssigned && protocol) {
+          if (['UART', 'RS232', 'RS485'].includes(protocol)) role = `${protocol} DATA`;
+          else if (protocol === 'CAN') role = 'CAN BUS';
+          else if (protocol === 'LIN') role = 'LIN BUS';
+          else if (protocol === 'I2C' && parameters.sdaChannel === hw.id) role = 'I²C SDA';
+          else if (protocol === 'I2C' && parameters.sclChannel === hw.id) role = 'I²C SCL';
+          else if (protocol === 'SPI' && parameters.sclkChannel === hw.id) role = 'SPI SCLK';
+          else if (protocol === 'SPI' && parameters.mosiChannel === hw.id) role = 'SPI MOSI';
+          else if (protocol === 'SPI' && parameters.misoChannel === hw.id) role = 'SPI MISO';
+          else if (protocol === 'SPI' && parameters.csChannel === hw.id) role = 'SPI CS';
+        }
+        role = role || hw.id;
 
         return (
           <div
