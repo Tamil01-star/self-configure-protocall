@@ -6,9 +6,7 @@ import {
   Square, 
   Sparkles, 
   RotateCcw, 
-  Cpu, 
-  Tv, 
-  Radio 
+  Cpu 
 } from 'lucide-react';
 import type { SystemHardwareStatus, AnalyzerState } from '../types/analyzer';
 
@@ -63,24 +61,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           <span className="text-instrument-textMuted">Analyzer:</span>
           <span className={`font-bold ${isConnected ? 'text-instrument-green' : 'text-instrument-red'}`}>
             ESP32 #2 — {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
-          </span>
-        </div>
-
-        {/* ESP32 #1 Signal Generator Status Badge */}
-        <div className="px-2.5 py-1 bg-instrument-bg rounded-sm border border-instrument-border flex items-center space-x-2">
-          <Radio className="w-3.5 h-3.5 text-instrument-blue" />
-          <span className="text-instrument-textMuted">Source:</span>
-          <span className="font-bold text-instrument-textSubtle">
-            ESP32 #1 — {hardwareStatus.esp32_1_status}
-          </span>
-        </div>
-
-        {/* LCD Status Badge */}
-        <div className="px-2.5 py-1 bg-instrument-bg rounded-sm border border-instrument-border flex items-center space-x-2">
-          <Tv className="w-3.5 h-3.5 text-instrument-textMuted" />
-          <span className="text-instrument-textMuted">LCD:</span>
-          <span className="font-bold text-instrument-textSubtle">
-            {hardwareStatus.lcd_status}
           </span>
         </div>
 
