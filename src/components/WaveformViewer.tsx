@@ -6,6 +6,7 @@ interface WaveformViewerProps {
   channels: DigitalChannelSample[];
   isConnected: boolean;
   protocol: ProtocolType | null;
+  focusChannel?: string;
 }
 
 /** 
@@ -22,6 +23,7 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
   channels,
   isConnected,
   protocol,
+  focusChannel,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -101,17 +103,22 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         '#2563eb', '#dc2626', '#0d9488',
       ];
 
-      const laneCount = 7;
+      const targetIndices = focusChannel
+        ? [parseInt(focusChannel.replace('CH', '')) - 1]
+        : [0, 1, 2, 3, 4, 5, 6];
+
+      const laneCount = targetIndices.length;
       const laneHeight = (height - 20) / laneCount;
 
       // Only scroll when real hardware transitions are present
       if (anyRealSignal) offset += 0.8;
 
-      for (let idx = 0; idx < laneCount; idx++) {
+      for (let i = 0; i < laneCount; i++) {
+        const idx = targetIndices[i];
         const expectedId = `CH${idx + 1}`;
         const ch = channels.find(c => c.id === expectedId);
         
-        const laneTop = 10 + idx * laneHeight;
+        const laneTop = 10 + i * laneHeight;
         const signalHighY = laneTop + 4;
         const signalLowY = laneTop + laneHeight - 6;
         const label = getChannelLabel(idx, ch);

@@ -70,6 +70,7 @@ export const ChannelDetail: React.FC<ChannelDetailProps> = ({
               channels={channels}
               isConnected={isConnected}
               protocol={protocol}
+              focusChannel={channelId}
             />
           </div>
 
@@ -85,7 +86,7 @@ export const ChannelDetail: React.FC<ChannelDetailProps> = ({
         {/* Right Column: Decoded Messages Output */}
         <div className="h-full flex flex-col min-h-[400px]">
           <DecodedDataTable
-            rows={decodedRows}
+            rows={decodedRows.filter(r => r.channel === channelId)}
             protocol={protocol}
             onExportCsv={onExportCsv}
             onExportJson={onExportJson}
