@@ -3,6 +3,7 @@ import { TopBar } from './components/TopBar';
 import { ChannelGrid } from './components/ChannelGrid';
 import { ChannelDetail } from './components/ChannelDetail';
 import { WaveformViewer } from './components/WaveformViewer';
+import { DecodedDataTable } from './components/DecodedDataTable';
 import { LandingIntro } from './components/LandingIntro';
 import { SettingsModal } from './components/SettingsModal';
 import { AutoDetectModal } from './components/AutoDetectModal';
@@ -257,6 +258,15 @@ export function App() {
                   channels={payload.channels}
                   isConnected={hardwareStatus.esp32_2_connected}
                   protocol={payload.protocol}
+                />
+              </div>
+              <div className="flex-1 min-h-[300px]">
+                <DecodedDataTable
+                  rows={payload.decodedRows}
+                  protocol={payload.protocol}
+                  onExportCsv={handleExportCsv}
+                  onExportJson={handleExportJson}
+                  onCopyHex={handleCopyHex}
                 />
               </div>
               <ChannelGrid
