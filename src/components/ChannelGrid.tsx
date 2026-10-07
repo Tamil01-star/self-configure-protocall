@@ -50,8 +50,7 @@ export const ChannelGrid: React.FC<ChannelGridProps> = ({
 
         // A channel has active signal/protocol if it has transitions, or is assigned by protocol parameters
         const hasTransitions = hasRealSignal(chSample);
-        const isAssigned = chSample !== undefined || isParamAssigned;
-        const hasSignal = isConnected && (hasTransitions || isAssigned);
+        const hasSignal = isConnected && (hasTransitions || isParamAssigned);
         
         // The user should be able to click into ANY channel as long as the ESP is connected
         const isClickable = isConnected;
