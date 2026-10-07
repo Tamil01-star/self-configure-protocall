@@ -153,6 +153,23 @@ export class SerialHardwareDriver {
     const canFrameId = json.canFrameId || json.frame_id || json.can_id;
     const linVersion = json.linVersion || json.lin_version || json.version;
 
+    // Helper to robustly match whatever the ESP32 sends (1, "1", "CH1", "GPIO 4", "4") to our CH1-CH7 IDs
+    const normalizeChannelId = (val: any): string | undefined => {
+      if (val === undefined || val === null) return undefined;
+      const s = String(val).trim().toUpperCase();
+      if (s === '4' || s === 'GPIO 4' || s === 'GPIO4') return 'CH1';
+      if (s === '13' || s === 'GPIO 13' || s === 'GPIO13') return 'CH2';
+      if (s === '14' || s === 'GPIO 14' || s === 'GPIO14') return 'CH3';
+      if (s === '25' || s === 'GPIO 25' || s === 'GPIO25') return 'CH4';
+      if (s === '26' || s === 'GPIO 26' || s === 'GPIO26') return 'CH5';
+      if (s === '27' || s === 'GPIO 27' || s === 'GPIO27') return 'CH6';
+      if (s === '15' || s === 'GPIO 15' || s === 'GPIO15') return 'CH7';
+      if (s.match(/^[1-7]$/)) return `CH${s}`;
+      if (s === '0') return 'CH1';
+      if (!s.startsWith('CH')) return `CH${s}`;
+      return s;
+    };
+
     // ── CHANNELS: ONLY what the ESP32 hardware actually sends ──────────────
     // NO synthetic / fabricated data. If ESP32 does not send ch.data, the channel stays empty.
     const channels = Array.isArray(json.channels)
@@ -192,21 +209,21 @@ export class SerialHardwareDriver {
       statusText: json.statusText || json.status || null,
       evidence,
       parameters: {
-        channel: json.channel,
+        channel: normalizeChannelId(json.channel),
         baudRate,
         format: json.format || json.frame,
         idle: json.idle,
         bitPeriodUs,
-        sdaChannel: json.sda,
-        sclChannel: json.scl,
+        sdaChannel: normalizeChannelId(json.sda),
+        sclChannel: normalizeChannelId(json.scl),
         clockHz,
         addressHex,
         rwMode: json.rw || json.rwMode,
         ackState: json.ack,
-        sclkChannel: json.sclk,
-        mosiChannel: json.mosi,
-        misoChannel: json.miso,
-        csChannel: json.cs,
+        sclkChannel: normalizeChannelId(json.sclk),
+        mosiChannel: normalizeChannelId(json.mosi),
+        misoChannel: normalizeChannelId(json.miso),
+        csChannel: normalizeChannelId(json.cs),
         clockHzSpi,
         spiMode: json.mode !== undefined ? json.mode : json.CPOL,
         cpol: json.cpol !== undefined ? json.cpol : json.CPOL,
