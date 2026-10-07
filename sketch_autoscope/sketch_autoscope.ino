@@ -64,16 +64,18 @@ void analyzeProtocol() {
       if (diff > 5 && diff < min_diff) min_diff = diff;
     }
     long est_baud = 1000000 / min_diff;
-    if(est_baud > 100000 && est_baud < 130000) {  
+    
+    // We lowered this to look for 9600 Baud! (Between 8000 and 11000)
+    if(est_baud > 8000 && est_baud < 11000) {  
       Serial.println("{");
       Serial.println("  \"protocol\": \"UART\",");
       Serial.println("  \"electrical_interface\": \"TTL 3.3V\",");
       Serial.println("  \"confidence\": 95.0,");
-      Serial.println("  \"baud_rate\": 115200,");
+      Serial.println("  \"baud_rate\": 9600,");
       Serial.println("  \"data_bits\": 8,");
       Serial.println("  \"parity\": \"None\",");
       Serial.println("  \"stop_bits\": 1,");
-      Serial.println("  \"bus_speed\": \"115.2 kbps\"");
+      Serial.println("  \"bus_speed\": \"9.6 kbps\"");
       Serial.println("}");
       
       // Update LCD

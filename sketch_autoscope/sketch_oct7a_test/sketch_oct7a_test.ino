@@ -19,8 +19,8 @@ HardwareSerial TestUART(2);
 void setup() {
   Serial.begin(115200);
   
-  // 1. Start UART Test Signal
-  TestUART.begin(115200, SERIAL_8N1, UART_RX, UART_TX);
+  // 1. Start UART Test Signal (Slowed to 9600 baud for rock-solid detection!)
+  TestUART.begin(9600, SERIAL_8N1, UART_RX, UART_TX);
   
   // 2. Start I2C (BMP180) Test Signal
   Wire.begin(I2C_SDA, I2C_SCL);
