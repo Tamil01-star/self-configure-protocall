@@ -24,13 +24,13 @@ export const ChannelGrid: React.FC<ChannelGridProps> = ({
   onChannelClick,
 }) => {
   const channelHardwareMap = [
-    { id: 'CH1', gpio: 'GPIO 4' },
-    { id: 'CH2', gpio: 'GPIO 13' },
-    { id: 'CH3', gpio: 'GPIO 14' },
-    { id: 'CH4', gpio: 'GPIO 25' },
-    { id: 'CH5', gpio: 'GPIO 26' },
-    { id: 'CH6', gpio: 'GPIO 27' },
-    { id: 'CH7', gpio: 'GPIO 15' },
+    { id: 'CH1', gpio: 'GPIO 36' },
+    { id: 'CH2', gpio: 'GPIO 39' },
+    { id: 'CH3', gpio: 'GPIO 34' },
+    { id: 'CH4', gpio: 'GPIO 35' },
+    { id: 'CH5', gpio: 'GPIO 32' },
+    { id: 'CH6', gpio: 'GPIO 33' },
+    { id: 'CH7', gpio: 'GPIO 25' },
   ];
 
   return (
