@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { TopBar } from './components/TopBar';
 import { ChannelGrid } from './components/ChannelGrid';
 import { ChannelDetail } from './components/ChannelDetail';
+import { WaveformViewer } from './components/WaveformViewer';
 import { LandingIntro } from './components/LandingIntro';
 import { SettingsModal } from './components/SettingsModal';
 import { AutoDetectModal } from './components/AutoDetectModal';
@@ -250,13 +251,22 @@ export function App() {
               onCopyHex={handleCopyHex}
             />
           ) : (
-            <ChannelGrid
-              channels={payload.channels}
-              protocol={payload.protocol}
-              parameters={payload.parameters}
-              isConnected={hardwareStatus.esp32_2_connected}
-              onChannelClick={(id) => setSelectedChannel(id)}
-            />
+            <div className="flex flex-col space-y-4">
+              <div className="h-[350px] w-full">
+                <WaveformViewer
+                  channels={payload.channels}
+                  isConnected={hardwareStatus.esp32_2_connected}
+                  protocol={payload.protocol}
+                />
+              </div>
+              <ChannelGrid
+                channels={payload.channels}
+                protocol={payload.protocol}
+                parameters={payload.parameters}
+                isConnected={hardwareStatus.esp32_2_connected}
+                onChannelClick={(id) => setSelectedChannel(id)}
+              />
+            </div>
           )}
         </main>
       </div>
