@@ -158,13 +158,13 @@ export class SerialHardwareDriver {
     const normalizeChannelId = (val: any): string | undefined => {
       if (val === undefined || val === null) return undefined;
       const s = String(val).trim().toUpperCase();
-      if (s === '4' || s === 'GPIO 4' || s === 'GPIO4') return 'CH1';
-      if (s === '13' || s === 'GPIO 13' || s === 'GPIO13') return 'CH2';
-      if (s === '14' || s === 'GPIO 14' || s === 'GPIO14') return 'CH3';
-      if (s === '25' || s === 'GPIO 25' || s === 'GPIO25') return 'CH4';
-      if (s === '26' || s === 'GPIO 26' || s === 'GPIO26') return 'CH5';
-      if (s === '27' || s === 'GPIO 27' || s === 'GPIO27') return 'CH6';
-      if (s === '15' || s === 'GPIO 15' || s === 'GPIO15') return 'CH7';
+      if (s === '36' || s === 'GPIO 36' || s === 'GPIO36' || s === '4' || s === 'GPIO 4') return 'CH1';
+      if (s === '39' || s === 'GPIO 39' || s === 'GPIO39' || s === '13' || s === 'GPIO 13') return 'CH2';
+      if (s === '34' || s === 'GPIO 34' || s === 'GPIO34' || s === '14' || s === 'GPIO 14') return 'CH3';
+      if (s === '35' || s === 'GPIO 35' || s === 'GPIO35' || s === '25' || s === 'GPIO 25') return 'CH4';
+      if (s === '32' || s === 'GPIO 32' || s === 'GPIO32' || s === '26' || s === 'GPIO 26') return 'CH5';
+      if (s === '33' || s === 'GPIO 33' || s === 'GPIO33' || s === '27' || s === 'GPIO 27') return 'CH6';
+      if (s === '25' || s === 'GPIO 25' || s === 'GPIO25' || s === '15' || s === 'GPIO 15') return 'CH7';
       if (s.match(/^[1-7]$/)) return `CH${s}`;
       if (s === '0') return 'CH1';
       if (!s.startsWith('CH')) return `CH${s}`;

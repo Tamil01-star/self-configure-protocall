@@ -107,7 +107,14 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         // STRICT PROTOCOL FILTER:
         // Only draw lanes for channels that actually belong to the detected protocol.
         // This is the definitive fix to prevent SDA/SCL appearing when UART is active, etc.
-        if (protocol === 'UART' || protocol === 'RFID' || protocol === 'RS232' || protocol === 'RS485' || protocol === 'LIN') {
+        if (protocol === 'RFID') {
+          // Dynamic for RFID: draw whichever channels received active RFID signal data (CH1 for UART RFID, CH4-7 for SPI RFID)
+          const activeIndices = channels
+            .filter(c => Array.isArray(c.data) && c.data.some(v => v !== c.data[0]))
+            .map(c => parseInt(c.id.replace('CH', '')) - 1)
+            .filter(idx => !isNaN(idx) && idx >= 0 && idx < 7);
+          targetIndices = activeIndices.length > 0 ? activeIndices : [0, 3, 4, 5, 6];
+        } else if (protocol === 'UART' || protocol === 'RS232' || protocol === 'RS485' || protocol === 'LIN') {
           targetIndices = [0]; // CH1 only
         } else if (protocol === 'I2C') {
           targetIndices = [1, 2]; // CH2 (SDA) + CH3 (SCL) only

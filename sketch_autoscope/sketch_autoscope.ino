@@ -339,9 +339,9 @@ void analyzeProtocol() {
   }
 
   // =========================================================================
-  // 3. SPI DETECTION (CH4 = SCK, CH5 = MOSI, CH6 = MISO, CH7 = CS)
+  // 3. SPI / RFID SPI DETECTION (CH4 = SCK, CH5 = MOSI, CH6 = MISO, CH7 = CS)
   // =========================================================================
-  else if (max_transitions == spi_transitions && spi_transitions >= 20) {
+  else if (max_transitions == spi_transitions && spi_transitions >= 3) {
     uint32_t min_diff = getMinDiff(35); // SCK (35)
     long est_clock = (min_diff < 999999) ? (1000000 / (min_diff * 2)) : 100000;
     if (est_clock > 80000 && est_clock < 120000) est_clock = 100000;
@@ -363,9 +363,23 @@ void analyzeProtocol() {
       }
     }
 
-    if (decoded_count < 2) return;
+    if (decoded_count < 1) return;
 
-    Serial.print("{\"protocol\":\"SPI\",\"sclk\":\"CH4\",\"mosi\":\"CH5\",\"miso\":\"CH6\",\"cs\":\"CH7\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":96.0,\"clock_frequency\":");
+    bool is_rfid = false;
+    if (decoded_count >= 3) {
+      int hex_count = 0;
+      for (int k = 0; k < decoded_count; k++) {
+        char c = (char)decoded_bytes[k];
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || c == ' ' || c == ':' || c == '-') {
+          hex_count++;
+        }
+      }
+      if ((float)hex_count / decoded_count >= 0.5) is_rfid = true;
+    }
+
+    Serial.print("{\"protocol\":\"");
+    Serial.print(is_rfid ? "RFID" : "SPI");
+    Serial.print("\",\"sclk\":\"CH4\",\"mosi\":\"CH5\",\"miso\":\"CH6\",\"cs\":\"CH7\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":96.0,\"clock_frequency\":");
     Serial.print(est_clock);
     Serial.print(",\"CPOL\":0,\"CPHA\":0,\"data_bits\":8,\"bus_speed\":\"");
     Serial.print(est_clock / 1000.0, 1);
@@ -394,14 +408,22 @@ void analyzeProtocol() {
     // Update LCD
     static String last_spi = "";
     String new_spi = String(est_clock/1000) + " kHz Clock";
-    if (last_spi != new_spi) {
+    if (decoded_count > 0) {
       lcd_busy = true;
       lcd.clear();
-      lcd.print("SPI DETECTED");
-      lcd.setCursor(0, 1);
-      lcd.print(new_spi);
+      if (is_rfid) {
+        lcd.print("RFID TAG READ");
+        lcd.setCursor(0, 1);
+        String uid_summary = "";
+        for(int k=0; k<min(decoded_count, 16); k++) uid_summary += (char)decoded_bytes[k];
+        lcd.print(uid_summary);
+      } else if (last_spi != new_spi) {
+        lcd.print("SPI DETECTED");
+        lcd.setCursor(0, 1);
+        lcd.print(new_spi);
+        last_spi = new_spi;
+      }
       lcd_busy = false;
-      last_spi = new_spi;
     }
   }
 }
