@@ -103,7 +103,9 @@ void analyzeProtocol() {
 
   // Find the single dominant REAL protocol
   int max_transitions = max(uart_transitions, max(i2c_transitions, spi_transitions));
-  if (max_transitions < 3) return;
+  
+  // Reject slow AC Mains Hum (50/60Hz) or random static by requiring a dense data burst
+  if (max_transitions < 15) return;
 
   Serial.print("{");
   
@@ -119,15 +121,18 @@ void analyzeProtocol() {
     Serial.print("]}");
   };
 
+  int valid_bytes = 0;
+
   auto printDecoded = [&](const char* ch, uint8_t byte_val, bool first) {
-    if(byte_val == 0 || byte_val > 126) return first;
+    if(byte_val == 0 || byte_val > 126) return first; // Skip garbage
+    valid_bytes++;
     if (!first) Serial.print(",");
     Serial.print("{\"channel\":\""); Serial.print(ch); Serial.print("\",\"hex\":\"0x");
     if(byte_val < 16) Serial.print("0");
     Serial.print(byte_val, HEX);
     Serial.print("\",\"ascii\":\"");
     if (byte_val >= 32 && byte_val <= 126 && byte_val != '"' && byte_val != '\\') Serial.print((char)byte_val);
-    else Serial.print("?");
+    else Serial.print(".");
     Serial.print("\"}");
     return false;
   };
@@ -155,9 +160,13 @@ void analyzeProtocol() {
   if (max_transitions == uart_transitions) {
     uint32_t min_diff = getMinDiff(36);
     long est_baud = (min_diff < 999999) ? (1000000 / min_diff) : 9600;
-    // Snap to standard baud
-    if (est_baud > 8500 && est_baud < 10500) est_baud = 9600;
-    if (est_baud > 105000 && est_baud < 125000) est_baud = 115200;
+    
+    // Aggressive mathematical snap to guarantee standard baud stability against noise
+    if (est_baud < 14000) est_baud = 9600;
+    else if (est_baud < 28000) est_baud = 19200;
+    else if (est_baud < 48000) est_baud = 38400;
+    else if (est_baud < 80000) est_baud = 57600;
+    else est_baud = 115200;
 
     Serial.print("\"protocol\":\"UART\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
     Serial.print(est_baud);
@@ -198,7 +207,7 @@ void analyzeProtocol() {
     // Non-blocking LCD Update
     static String last_uart = "";
     String new_uart = String(est_baud) + " Baud";
-    if (last_uart != new_uart) {
+    if (valid_bytes > 0 && last_uart != new_uart) {
       lcd.clear(); lcd.print("UART DETECTED"); lcd.setCursor(0,1); lcd.print(new_uart);
       last_uart = new_uart;
     }
@@ -234,7 +243,7 @@ void analyzeProtocol() {
     // Non-blocking LCD Update
     static String last_i2c = "";
     String new_i2c = String(est_clock/1000) + " kHz Clock";
-    if (last_i2c != new_i2c) {
+    if (valid_bytes > 0 && last_i2c != new_i2c) {
       lcd.clear(); lcd.print("I2C DETECTED"); lcd.setCursor(0,1); lcd.print(new_i2c);
       last_i2c = new_i2c;
     }
@@ -272,7 +281,7 @@ void analyzeProtocol() {
     // Non-blocking LCD Update
     static String last_spi = "";
     String new_spi = String(est_clock/1000) + " kHz Clock";
-    if (last_spi != new_spi) {
+    if (valid_bytes > 0 && last_spi != new_spi) {
       lcd.clear(); lcd.print("SPI DETECTED"); lcd.setCursor(0,1); lcd.print(new_spi);
       last_spi = new_spi;
     }
