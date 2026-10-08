@@ -157,45 +157,70 @@ void analyzeProtocol() {
 
     // Buffer decoded characters
     uint8_t decoded_bytes[32];
+    uint32_t decoded_start_times[32];
     int decoded_count = 0;
+    uint32_t current_search_t = 0;
 
     for(int i=0; i<sample_count-1; i++) {
-      // Look for Start Bit: transition from HIGH (1) to LOW (0)
-      if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
-        uint32_t start_t = transition_times[i+1];
-        uint8_t byte_val = 0;
-        
-        // Sample all 8 data bits in the exact center of each bit
-        for(int b=0; b<8; b++) {
-          uint32_t sample_t = start_t + bit_time + (bit_time / 2) + (b * bit_time);
-          int state_val = 0;
-          for(int j=i+1; j<sample_count; j++) {
-            if (transition_times[j] > sample_t) { 
-              state_val = (transition_states[j-1] & (1ULL<<36)) ? 1 : 0; 
-              break; 
+      // Only search for a new Start Bit AFTER the previous 10-bit frame has completed!
+      if (transition_times[i+1] >= current_search_t) {
+        // Look for Start Bit: transition from HIGH (1) to LOW (0)
+        if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
+          uint32_t start_t = transition_times[i+1];
+          uint8_t byte_val = 0;
+          
+          // Sample all 8 data bits in the exact center of each bit (1.5T, 2.5T, ..., 8.5T)
+          for(int b=0; b<8; b++) {
+            uint32_t sample_t = start_t + bit_time + (bit_time / 2) + (b * bit_time);
+            int state_val = 0;
+            for(int j=i+1; j<sample_count; j++) {
+              if (transition_times[j] > sample_t) { 
+                state_val = (transition_states[j-1] & (1ULL<<36)) ? 1 : 0; 
+                break; 
+              }
+              if (j == sample_count - 1) {
+                state_val = (transition_states[j] & (1ULL<<36)) ? 1 : 0;
+              }
             }
-            if (j == sample_count - 1) {
-              state_val = (transition_states[j] & (1ULL<<36)) ? 1 : 0;
+            if (state_val) byte_val |= (1 << b);
+          }
+          
+          // Accept valid printable ASCII characters
+          if (byte_val >= 32 && byte_val <= 126) {
+            if (decoded_count < 32) {
+              decoded_bytes[decoded_count] = byte_val;
+              decoded_start_times[decoded_count] = start_t;
+              decoded_count++;
             }
           }
-          if (state_val) byte_val |= (1 << b);
-        }
-        
-        // Accept valid printable ASCII characters
-        if (byte_val >= 32 && byte_val <= 126) {
-          if (decoded_count < 32) decoded_bytes[decoded_count++] = byte_val;
-        }
-        
-        // Advance past the 10-bit frame (1 start + 8 data + 1 stop)
-        uint32_t end_of_byte_t = start_t + (10 * bit_time) - (bit_time / 4);
-        while(i < sample_count-1 && transition_times[i+1] < end_of_byte_t) {
-          i++;
+          
+          // TIMESTAMP LOCK: Next start bit CANNOT occur until after 9.5 bit times!
+          // (1 start bit + 8 data bits = 9.0 bit times. Stop bit is 9.0T to 10.0T)
+          // This mathematically guarantees data bits inside this character are never mistaken for start bits!
+          current_search_t = start_t + (95 * bit_time) / 10;
         }
       }
     }
 
+    // Check if decoded sequence is an RFID UID (hex characters 0-9, A-F)
+    bool is_rfid = false;
+    if (decoded_count >= 4) {
+      int hex_count = 0;
+      for (int k = 0; k < decoded_count; k++) {
+        char c = (char)decoded_bytes[k];
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || c == ' ' || c == ':' || c == '-') {
+          hex_count++;
+        }
+      }
+      if ((float)hex_count / decoded_count >= 0.75) {
+        is_rfid = true;
+      }
+    }
+
     // Output complete JSON packet to Serial
-    Serial.print("{\"protocol\":\"UART\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
+    Serial.print("{\"protocol\":\"");
+    Serial.print(is_rfid ? "RFID" : "UART");
+    Serial.print("\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
     Serial.print(est_baud);
     Serial.print(",\"data_bits\":8,\"parity\":\"None\",\"stop_bits\":1,\"bus_speed\":\"");
     Serial.print(est_baud / 1000.0, 1);
@@ -203,9 +228,12 @@ void analyzeProtocol() {
     printChannel("CH1", "TX", 36);
     Serial.print("],\"decoded\":[");
 
+    uint32_t base_t = (decoded_count > 0) ? decoded_start_times[0] : 0;
     for(int k=0; k<decoded_count; k++) {
       if (k > 0) Serial.print(",");
-      Serial.print("{\"channel\":\"CH1\",\"hex\":\"0x");
+      Serial.print("{\"channel\":\"CH1\",\"timeMs\":");
+      Serial.print((decoded_start_times[k] - base_t) / 1000.0, 3);
+      Serial.print(",\"hex\":\"0x");
       if(decoded_bytes[k] < 16) Serial.print("0");
       Serial.print(decoded_bytes[k], HEX);
       Serial.print("\",\"dec\":");

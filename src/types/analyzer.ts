@@ -1,4 +1,4 @@
-export type ProtocolType = 'UART' | 'I2C' | 'SPI' | 'RS232' | 'RS485' | 'CAN' | 'LIN' | 'UNKNOWN';
+export type ProtocolType = 'UART' | 'I2C' | 'SPI' | 'RS232' | 'RS485' | 'CAN' | 'LIN' | 'RFID' | 'UNKNOWN';
 
 export type AnalyzerState = 
   | 'DISCONNECTED'

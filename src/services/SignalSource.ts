@@ -138,6 +138,7 @@ export class SerialHardwareDriver {
     else if (protocolStr.includes('CAN')) protocol = 'CAN';
     else if (protocolStr.includes('LIN')) protocol = 'LIN';
     else if (protocolStr.includes('UART')) protocol = 'UART';
+    else if (protocolStr.includes('RFID')) protocol = 'RFID';
     else if (protocolStr.includes('I2C') || protocolStr.includes('I²C')) protocol = 'I2C';
     else if (protocolStr.includes('SPI')) protocol = 'SPI';
     else if (protocolStr.includes('UNKNOWN')) protocol = 'UNKNOWN';
@@ -186,9 +187,11 @@ export class SerialHardwareDriver {
           id: d.id || `${idx}`,
           timeMs: typeof d.timeMs === 'number' ? d.timeMs : idx * 0.087,
           channel: normalizeChannelId(d.channel) || 'CH1',
-          hex: d.hex || '0x00',
-          dec: typeof d.dec === 'number' ? d.dec : 0,
-          ascii: d.ascii || '?',
+          hex: d.hex || (typeof d.dec === 'number' ? `0x${d.dec.toString(16).toUpperCase().padStart(2, '0')}` : '0x00'),
+          dec: typeof d.dec === 'number' && d.dec > 0 ? d.dec : (d.hex ? parseInt(d.hex, 16) || 0 : 0),
+          ascii: (d.ascii && d.ascii !== '?') 
+            ? d.ascii 
+            : ((typeof d.dec === 'number' && d.dec >= 32 && d.dec <= 126) ? String.fromCharCode(d.dec) : (d.hex && parseInt(d.hex, 16) >= 32 && parseInt(d.hex, 16) <= 126 ? String.fromCharCode(parseInt(d.hex, 16)) : '?')),
           status: d.status || 'OK',
           addressHex: d.address,
           rw: d.rw,
