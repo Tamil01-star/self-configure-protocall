@@ -165,8 +165,8 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         // ── STRICT: draw waveform ONLY if this channel has REAL hardware bit data ──
         // No data from hardware → flat idle line; NEVER inject synthetic bit patterns
         const bitPattern: number[] =
-          chActive && ch!.data!.length > 0
-            ? ch!.data!
+          ch && Array.isArray(ch.data) && ch.data.length > 0
+            ? ch.data
             : (idx === 4 || idx === 5) ? [0, 0, 0, 0] : [1, 1, 1, 1]; // idle flat
 
         ctx.strokeStyle = chActive ? channelColors[idx] : '#cbd5e1';
