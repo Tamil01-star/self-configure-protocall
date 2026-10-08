@@ -153,14 +153,21 @@ void analyzeProtocol() {
     uint8_t decoded_bytes[32];
     uint32_t decoded_start_times[32];
     int decoded_count = 0;
+    uint32_t next_allowed_start_t = 0;
 
     for(int i=0; i<sample_count-1; i++) {
       // Look for Start Bit: transition from HIGH (1) to LOW (0)
       if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
         uint32_t start_t = transition_times[i+1];
+
+        // IGNORE any falling edge that occurs inside an active character frame!
+        if (start_t < next_allowed_start_t) {
+          continue;
+        }
+
         uint8_t byte_val = 0;
         
-        // Sample all 8 data bits in the exact center of each bit
+        // Sample all 8 data bits in the exact center of each bit (1.5T, 2.5T, ..., 8.5T)
         for(int b=0; b<8; b++) {
           uint32_t sample_t = start_t + bit_time + (bit_time / 2) + (b * bit_time);
           int state_val = 0;
@@ -185,11 +192,8 @@ void analyzeProtocol() {
           }
         }
         
-        // Advance past the 10-bit frame (1 start + 8 data + 1 stop)
-        uint32_t end_of_byte_t = start_t + (10 * bit_time) - (bit_time / 4);
-        while(i < sample_count-1 && transition_times[i+1] < end_of_byte_t) {
-          i++;
-        }
+        // TIMESTAMP LOCK: Next start bit CANNOT occur until after 9.5 bit times!
+        next_allowed_start_t = start_t + (95 * bit_time) / 10;
       }
     }
 
