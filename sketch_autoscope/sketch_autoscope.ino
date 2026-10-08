@@ -6,7 +6,7 @@
 // LCD on default ESP32 I2C pins (GPIO 21 = SDA, GPIO 22 = SCL)
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-volatile bool lcd_busy = false; // Declared at top so captureSignal() can see it!
+volatile bool lcd_busy = false;
 
 #define MAX_SAMPLES 4000
 uint32_t transition_times[MAX_SAMPLES];
@@ -46,7 +46,13 @@ void IRAM_ATTR captureSignal() {
     if (micros() - start_time > 200000) return; // 200ms timeout
   }
 
-  // 2. Wait for ANY channel trigger
+  // 2. CRITICAL FIX: Record initial idle state as Sample 0!
+  // This ensures the first Start Bit falling edge (1 -> 0) is correctly detected at i = 0!
+  transition_states[0] = current_state;
+  transition_times[0] = micros();
+  sample_count = 1;
+
+  // 3. Wait for ANY channel trigger (change from idle)
   start_time = micros();
   while(current_state == last_state) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
@@ -54,9 +60,15 @@ void IRAM_ATTR captureSignal() {
     if(micros() - start_time > 1000000) return; // 1s timeout
   }
 
-  // 3. Fast capture (20ms window)
+  // 4. Record trigger transition as Sample 1
+  transition_states[1] = current_state;
+  transition_times[1] = micros();
+  last_state = current_state;
+  sample_count = 2;
+
+  // 5. Fast capture remaining transitions (50ms window to easily record all characters)
   start_time = micros();
-  while(sample_count < MAX_SAMPLES && (micros() - start_time < 20000)) {
+  while(sample_count < MAX_SAMPLES && (micros() - start_time < 50000)) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
     if(current_state != last_state) {
@@ -148,29 +160,41 @@ void analyzeProtocol() {
     int decoded_count = 0;
 
     for(int i=0; i<sample_count-1; i++) {
+      // Look for Start Bit: transition from HIGH (1) to LOW (0)
       if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
         uint32_t start_t = transition_times[i+1];
         uint8_t byte_val = 0;
+        
+        // Sample all 8 data bits in the exact center of each bit
         for(int b=0; b<8; b++) {
           uint32_t sample_t = start_t + bit_time + (bit_time / 2) + (b * bit_time);
           int state_val = 0;
           for(int j=i+1; j<sample_count; j++) {
-            if (transition_times[j] > sample_t) { state_val = (transition_states[j-1] & (1ULL<<36)) ? 1 : 0; break; }
-            if (j == sample_count - 1) state_val = (transition_states[j] & (1ULL<<36)) ? 1 : 0;
+            if (transition_times[j] > sample_t) { 
+              state_val = (transition_states[j-1] & (1ULL<<36)) ? 1 : 0; 
+              break; 
+            }
+            if (j == sample_count - 1) {
+              state_val = (transition_states[j] & (1ULL<<36)) ? 1 : 0;
+            }
           }
           if (state_val) byte_val |= (1 << b);
         }
-        if (byte_val > 0) {
+        
+        // Accept valid printable ASCII characters
+        if (byte_val >= 32 && byte_val <= 126) {
           if (decoded_count < 32) decoded_bytes[decoded_count++] = byte_val;
         }
-        uint32_t end_of_byte_t = start_t + (9 * bit_time);
+        
+        // Advance past the 10-bit frame (1 start + 8 data + 1 stop)
+        uint32_t end_of_byte_t = start_t + (10 * bit_time) - (bit_time / 4);
         while(i < sample_count-1 && transition_times[i+1] < end_of_byte_t) {
           i++;
         }
       }
     }
 
-    // Output JSON to Serial
+    // Output complete JSON packet to Serial
     Serial.print("{\"protocol\":\"UART\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
     Serial.print(est_baud);
     Serial.print(",\"data_bits\":8,\"parity\":\"None\",\"stop_bits\":1,\"bus_speed\":\"");
@@ -184,27 +208,38 @@ void analyzeProtocol() {
       Serial.print("{\"channel\":\"CH1\",\"hex\":\"0x");
       if(decoded_bytes[k] < 16) Serial.print("0");
       Serial.print(decoded_bytes[k], HEX);
-      Serial.print("\",\"ascii\":\"");
-      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126 && decoded_bytes[k] != '"' && decoded_bytes[k] != '\\') {
+      Serial.print("\",\"dec\":");
+      Serial.print(decoded_bytes[k]);
+      Serial.print(",\"ascii\":\"");
+      if (decoded_bytes[k] != '"' && decoded_bytes[k] != '\\') {
         Serial.print((char)decoded_bytes[k]);
       } else {
-        Serial.print(".");
+        Serial.print("?");
       }
       Serial.print("\"}");
     }
     Serial.println("]}");
     
-    // Update LCD
-    static String last_uart = "";
-    String new_uart = String(est_baud) + " Baud";
-    if (decoded_count > 0 && last_uart != new_uart) {
-      lcd_busy = true;
-      lcd.clear();
-      lcd.print("UART DETECTED");
-      lcd.setCursor(0, 1);
-      lcd.print(new_uart);
-      lcd_busy = false;
-      last_uart = new_uart;
+    // Update LCD with clean assembled text
+    if (decoded_count > 0) {
+      char ascii_str[17];
+      int copy_len = min(decoded_count, 16);
+      for(int m=0; m<copy_len; m++) ascii_str[m] = (char)decoded_bytes[m];
+      ascii_str[copy_len] = '\0';
+      
+      static String last_uart = "";
+      String new_uart = String(ascii_str);
+      if (last_uart != new_uart) {
+        lcd_busy = true;
+        lcd.clear();
+        lcd.print("UART: ");
+        lcd.print(new_uart);
+        lcd.setCursor(0, 1);
+        lcd.print(est_baud);
+        lcd.print(" Baud 8N1");
+        lcd_busy = false;
+        last_uart = new_uart;
+      }
     }
   }
 
@@ -249,9 +284,14 @@ void analyzeProtocol() {
       Serial.print("{\"channel\":\"CH2\",\"hex\":\"0x");
       if(decoded_bytes[k] < 16) Serial.print("0");
       Serial.print(decoded_bytes[k], HEX);
-      Serial.print("\",\"ascii\":\"");
-      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126) Serial.print((char)decoded_bytes[k]);
-      else Serial.print(".");
+      Serial.print("\",\"dec\":");
+      Serial.print(decoded_bytes[k]);
+      Serial.print(",\"ascii\":\"");
+      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126 && decoded_bytes[k] != '"' && decoded_bytes[k] != '\\') {
+        Serial.print((char)decoded_bytes[k]);
+      } else {
+        Serial.print(".");
+      }
       Serial.print("\"}");
     }
     Serial.println("]}");
@@ -311,9 +351,14 @@ void analyzeProtocol() {
       Serial.print("{\"channel\":\"CH5\",\"hex\":\"0x");
       if(decoded_bytes[k] < 16) Serial.print("0");
       Serial.print(decoded_bytes[k], HEX);
-      Serial.print("\",\"ascii\":\"");
-      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126) Serial.print((char)decoded_bytes[k]);
-      else Serial.print(".");
+      Serial.print("\",\"dec\":");
+      Serial.print(decoded_bytes[k]);
+      Serial.print(",\"ascii\":\"");
+      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126 && decoded_bytes[k] != '"' && decoded_bytes[k] != '\\') {
+        Serial.print((char)decoded_bytes[k]);
+      } else {
+        Serial.print(".");
+      }
       Serial.print("\"}");
     }
     Serial.println("]}");
@@ -355,39 +400,7 @@ void setup() {
   lcd.print("SCANNING BUS...");
 }
 
-bool is_capturing = true;
-
-void handleCommands() {
-  if (Serial.available() > 0) {
-    String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
-    cmd.toUpperCase();
-    if (cmd == "STOP" || cmd == "PAUSE") {
-      is_capturing = false;
-      Serial.println("{\"state\":\"STOPPED\",\"statusText\":\"Capture Paused by User\"}");
-      lcd_busy = true;
-      lcd.clear();
-      lcd.print("AUTOSCOPE");
-      lcd.setCursor(0, 1);
-      lcd.print("PAUSED");
-      lcd_busy = false;
-    } else if (cmd == "START" || cmd == "RESUME") {
-      is_capturing = true;
-      Serial.println("{\"state\":\"CAPTURING\",\"statusText\":\"Capture Resumed by User\"}");
-      lcd_busy = true;
-      lcd.clear();
-      lcd.print("AUTOSCOPE");
-      lcd.setCursor(0, 1);
-      lcd.print("SCANNING BUS...");
-      lcd_busy = false;
-    }
-  }
-}
-
 void loop() {
-  handleCommands();
-  if (is_capturing) {
-    captureSignal();
-    if(sample_count > 0) analyzeProtocol();
-  }
+  captureSignal();
+  if(sample_count > 0) analyzeProtocol();
 }
