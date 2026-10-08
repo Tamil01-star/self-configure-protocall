@@ -30,7 +30,21 @@ void IRAM_ATTR captureSignal() {
   uint32_t start_time = micros();
   sample_count = 0;
 
-  // Wait for ANY of the 7 channels to change state (trigger)
+  // 1. Wait for Bus Stability (Anti-Noise Filter)
+  // Ensures floating pins don't trigger the analyzer randomly. The bus must be stable for 5ms.
+  uint32_t stable_start = micros();
+  while(micros() - stable_start < 5000) {
+    current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
+    current_state &= CHANNEL_MASK;
+    if (current_state != last_state) {
+      stable_start = micros(); // Reset stability timer
+      last_state = current_state;
+    }
+    if (micros() - start_time > 500000) return; // 500ms timeout if it never stabilizes (constant floating noise)
+  }
+
+  // 2. Wait for ANY of the 7 channels to change state (trigger)
+  start_time = micros();
   while(current_state == last_state) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
