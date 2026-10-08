@@ -14,7 +14,7 @@ uint64_t transition_states[MAX_SAMPLES]; // 64-bit to capture GPIO 32-39
 volatile int sample_count = 0;
 
 // CHANNEL MAPPING (Left Side of ESP32)
-// CH1 = GPIO36 (Bit 36) -> UART TX
+// CH1 = GPIO36 (Bit 36) -> UART TX / RFID
 // CH2 = GPIO39 (Bit 39) -> I2C SDA
 // CH3 = GPIO34 (Bit 34) -> I2C SCL
 // CH4 = GPIO35 (Bit 35) -> SPI SCK
@@ -27,46 +27,33 @@ volatile int sample_count = 0;
 void IRAM_ATTR captureSignal() {
   if (lcd_busy) return; // Do not sample while LCD is actively updating
 
-  uint64_t current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
-  current_state &= CHANNEL_MASK;
+  uint64_t initial_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
+  initial_state &= CHANNEL_MASK;
   
-  uint64_t last_state = current_state;
-  uint32_t start_time = micros();
+  uint64_t current_state = initial_state;
+  uint64_t last_state = initial_state;
   sample_count = 0;
 
-  // 1. Wait for bus stability (1ms)
-  uint32_t stable_start = micros();
-  while(micros() - stable_start < 1000) {
-    current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
-    current_state &= CHANNEL_MASK;
-    if (current_state != last_state) {
-      stable_start = micros();
-      last_state = current_state;
-    }
-    if (micros() - start_time > 200000) return; // 200ms timeout
-  }
-
-  // 2. CRITICAL FIX: Record initial idle state as Sample 0!
-  // This ensures the first Start Bit falling edge (1 -> 0) is correctly detected at i = 0!
-  transition_states[0] = current_state;
+  // 1. Record initial idle state as Sample 0
+  transition_states[0] = initial_state;
   transition_times[0] = micros();
   sample_count = 1;
 
-  // 3. Wait for ANY channel trigger (change from idle)
-  start_time = micros();
+  // 2. Wait for ANY channel trigger (change from initial state)
+  uint32_t start_time = micros();
   while(current_state == last_state) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
     if(micros() - start_time > 1000000) return; // 1s timeout
   }
 
-  // 4. Record trigger transition as Sample 1
+  // 3. Record trigger transition as Sample 1
   transition_states[1] = current_state;
   transition_times[1] = micros();
   last_state = current_state;
   sample_count = 2;
 
-  // 5. Fast capture remaining transitions (50ms window to easily record all characters)
+  // 4. Fast capture remaining transitions (50ms window)
   start_time = micros();
   while(sample_count < MAX_SAMPLES && (micros() - start_time < 50000)) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
@@ -81,7 +68,7 @@ void IRAM_ATTR captureSignal() {
 }
 
 void analyzeProtocol() {
-  if (sample_count < 10) return; 
+  if (sample_count < 4) return; 
 
   int uart_transitions = 0; // CH1 (GPIO36)
   int sda_transitions = 0;  // CH2 (GPIO39)
@@ -98,15 +85,13 @@ void analyzeProtocol() {
     if(diff & ((1ULL<<32) | (1ULL<<33) | (1ULL<<25))) spi_data++;
   }
 
-  // STRICT HARDWARE VERIFICATION:
+  // Strict physical bus validation:
   // I2C requires BOTH clock (SCL >= 16 transitions) AND data (SDA >= 4 transitions).
-  // If either pin is unconnected/idle, i2c_transitions is ZERO — ghost waveforms are impossible!
   int i2c_transitions = (scl_transitions >= 16 && sda_transitions >= 4) ? (sda_transitions + scl_transitions) : 0;
   int spi_transitions = (spi_sck >= 16 && spi_data >= 2) ? (spi_sck + spi_data) : 0;
 
-  // Dominant protocol
   int max_transitions = max(uart_transitions, max(i2c_transitions, spi_transitions));
-  if (max_transitions < 10) return;
+  if (max_transitions < 4) return;
 
   auto printChannel = [&](const char* id, const char* label, int bit_pos) {
     Serial.print("{\"id\":\""); Serial.print(id); 
@@ -129,7 +114,7 @@ void analyzeProtocol() {
       if(prev != curr) {
         if(last_t > 0) {
           uint32_t d = transition_times[i] - last_t;
-          if(d >= 4 && d < min_d) min_d = d;
+          if(d >= 35 && d < min_d) min_d = d;
         }
         last_t = transition_times[i];
       }
@@ -138,9 +123,9 @@ void analyzeProtocol() {
   };
 
   // =========================================================================
-  // 1. UART DETECTION (CH1 = GPIO36)
+  // 1. UART / RFID DETECTION (CH1 = GPIO36)
   // =========================================================================
-  if (max_transitions == uart_transitions && uart_transitions >= 3) {
+  if (max_transitions == uart_transitions && uart_transitions >= 4) {
     uint32_t min_diff = getMinDiff(36);
     long est_baud = (min_diff < 999999) ? (1000000 / min_diff) : 9600;
     
@@ -153,72 +138,55 @@ void analyzeProtocol() {
 
     long bit_time = 1000000 / est_baud;
 
-    // Buffer decoded characters
+    // Direct Time-Sampling Function: queries the exact logic level on pin 36 at time t
+    auto getPin36At = [&](uint32_t t) -> int {
+      if (t < transition_times[1]) return (transition_states[0] & (1ULL<<36)) ? 1 : 0;
+      for (int j = 1; j < sample_count; j++) {
+        if (j == sample_count - 1 || transition_times[j+1] > t) {
+          return (transition_states[j] & (1ULL<<36)) ? 1 : 0;
+        }
+      }
+      return 1;
+    };
+
     uint8_t decoded_bytes[32];
     uint32_t decoded_start_times[32];
     int decoded_count = 0;
-    uint32_t current_search_t = 0;
 
-    for(int i=0; i<sample_count-1; i++) {
-      // Only search for a new Start Bit AFTER the previous 10-bit frame has completed!
-      if (transition_times[i+1] >= current_search_t) {
-        // Look for Start Bit: transition from HIGH (1) to LOW (0)
-        if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
-          uint32_t start_t = transition_times[i+1];
-          uint8_t byte_val = 0;
-          
-          // Sample all 8 data bits in the exact center of each bit (1.5T, 2.5T, ..., 8.5T)
-          for(int b=0; b<8; b++) {
-            uint32_t sample_t = start_t + bit_time + (bit_time / 2) + (b * bit_time);
-            int state_val = 0;
-            for(int j=i+1; j<sample_count; j++) {
-              if (transition_times[j] > sample_t) { 
-                state_val = (transition_states[j-1] & (1ULL<<36)) ? 1 : 0; 
-                break; 
-              }
-              if (j == sample_count - 1) {
-                state_val = (transition_states[j] & (1ULL<<36)) ? 1 : 0;
-              }
-            }
-            if (state_val) byte_val |= (1 << b);
-          }
-          
-          // Accept valid decoded bytes
-          if (byte_val > 0) {
-            if (decoded_count < 32) {
-              decoded_bytes[decoded_count] = byte_val;
-              decoded_start_times[decoded_count] = start_t;
-              decoded_count++;
-            }
-          }
-          
-          // TIMESTAMP LOCK: Next start bit CANNOT occur until after 9.5 bit times!
-          // (1 start bit + 8 data bits = 9.0 bit times. Stop bit is 9.0T to 10.0T)
-          // This mathematically guarantees data bits inside this character are never mistaken for start bits!
-          current_search_t = start_t + (95 * bit_time) / 10;
-        }
-      }
-    }
+    uint32_t current_t = transition_times[1];
+    uint32_t capture_end_t = transition_times[sample_count - 1];
 
-    // Check if decoded sequence is an RFID UID (hex characters 0-9, A-F)
-    bool is_rfid = false;
-    if (decoded_count >= 4) {
-      int hex_count = 0;
-      for (int k = 0; k < decoded_count; k++) {
-        char c = (char)decoded_bytes[k];
-        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || c == ' ' || c == ':' || c == '-') {
-          hex_count++;
+    // Decode full stream of UART characters
+    while (current_t + (9 * bit_time) <= capture_end_t && decoded_count < 32) {
+      // Verify Start Bit is LOW
+      if (getPin36At(current_t + (bit_time / 2)) == 0) {
+        uint8_t byte_val = 0;
+        // Sample each bit at 1.5T, 2.5T, ..., 8.5T
+        for (int b = 0; b < 8; b++) {
+          uint32_t sample_t = current_t + bit_time + (bit_time / 2) + (b * bit_time);
+          if (getPin36At(sample_t)) {
+            byte_val |= (1 << b);
+          }
         }
-      }
-      if ((float)hex_count / decoded_count >= 0.75) {
-        is_rfid = true;
+
+        decoded_bytes[decoded_count] = byte_val;
+        decoded_start_times[decoded_count] = current_t;
+        decoded_count++;
+
+        // Advance past 10-bit frame (1 start + 8 data + 1 stop)
+        current_t += 10 * bit_time;
+
+        // Advance to next start bit
+        while (current_t < capture_end_t && getPin36At(current_t) == 1) {
+          current_t += (bit_time / 4);
+        }
+      } else {
+        current_t += (bit_time / 4);
       }
     }
 
     // Output complete JSON packet to Serial
-    Serial.print("{\"protocol\":\"");
-    Serial.print(is_rfid ? "RFID" : "UART");
-    Serial.print("\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
+    Serial.print("{\"protocol\":\"UART\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
     Serial.print(est_baud);
     Serial.print(",\"data_bits\":8,\"parity\":\"None\",\"stop_bits\":1,\"bus_speed\":\"");
     Serial.print(est_baud / 1000.0, 1);
@@ -237,10 +205,10 @@ void analyzeProtocol() {
       Serial.print("\",\"dec\":");
       Serial.print(decoded_bytes[k]);
       Serial.print(",\"ascii\":\"");
-      if (decoded_bytes[k] != '"' && decoded_bytes[k] != '\\') {
+      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126 && decoded_bytes[k] != '"' && decoded_bytes[k] != '\\') {
         Serial.print((char)decoded_bytes[k]);
       } else {
-        Serial.print("?");
+        Serial.print(".");
       }
       Serial.print("\"}");
     }
@@ -250,7 +218,10 @@ void analyzeProtocol() {
     if (decoded_count > 0) {
       char ascii_str[17];
       int copy_len = min(decoded_count, 16);
-      for(int m=0; m<copy_len; m++) ascii_str[m] = (char)decoded_bytes[m];
+      for(int m=0; m<copy_len; m++) {
+        char c = (char)decoded_bytes[m];
+        ascii_str[m] = (c >= 32 && c <= 126) ? c : '.';
+      }
       ascii_str[copy_len] = '\0';
       
       static String last_uart = "";
@@ -258,11 +229,10 @@ void analyzeProtocol() {
       if (last_uart != new_uart) {
         lcd_busy = true;
         lcd.clear();
-        lcd.print("UART: ");
         lcd.print(new_uart);
         lcd.setCursor(0, 1);
         lcd.print(est_baud);
-        lcd.print(" Baud 8N1");
+        lcd.print(" Baud UART");
         lcd_busy = false;
         last_uart = new_uart;
       }
@@ -277,7 +247,6 @@ void analyzeProtocol() {
     long est_clock = (min_diff < 999999) ? (1000000 / (min_diff * 2)) : 100000;
     if (est_clock > 80000 && est_clock < 120000) est_clock = 100000;
 
-    // Decode I2C bytes
     uint8_t decoded_bytes[32];
     int decoded_count = 0;
     uint8_t current_byte = 0;
@@ -294,7 +263,6 @@ void analyzeProtocol() {
       }
     }
 
-    // Suppress fake I2C: if no real bytes were decoded, ignore!
     if (decoded_count < 2) return;
 
     Serial.print("{\"protocol\":\"I2C\",\"sda\":\"CH2\",\"scl\":\"CH3\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":97.0,\"clock_frequency\":");
@@ -337,9 +305,9 @@ void analyzeProtocol() {
   }
 
   // =========================================================================
-  // 3. SPI / RFID SPI DETECTION (CH4 = SCK, CH5 = MOSI, CH6 = MISO, CH7 = CS)
+  // 3. SPI DETECTION (CH4 = SCK, CH5 = MOSI, CH6 = MISO, CH7 = CS)
   // =========================================================================
-  else if (max_transitions == spi_transitions && spi_transitions >= 3) {
+  else if (max_transitions == spi_transitions && spi_transitions >= 20) {
     uint32_t min_diff = getMinDiff(35); // SCK (35)
     long est_clock = (min_diff < 999999) ? (1000000 / (min_diff * 2)) : 100000;
     if (est_clock > 80000 && est_clock < 120000) est_clock = 100000;
@@ -361,23 +329,9 @@ void analyzeProtocol() {
       }
     }
 
-    if (decoded_count < 1) return;
+    if (decoded_count < 2) return;
 
-    bool is_rfid = false;
-    if (decoded_count >= 3) {
-      int hex_count = 0;
-      for (int k = 0; k < decoded_count; k++) {
-        char c = (char)decoded_bytes[k];
-        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || c == ' ' || c == ':' || c == '-') {
-          hex_count++;
-        }
-      }
-      if ((float)hex_count / decoded_count >= 0.5) is_rfid = true;
-    }
-
-    Serial.print("{\"protocol\":\"");
-    Serial.print(is_rfid ? "RFID" : "SPI");
-    Serial.print("\",\"sclk\":\"CH4\",\"mosi\":\"CH5\",\"miso\":\"CH6\",\"cs\":\"CH7\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":96.0,\"clock_frequency\":");
+    Serial.print("{\"protocol\":\"SPI\",\"sclk\":\"CH4\",\"mosi\":\"CH5\",\"miso\":\"CH6\",\"cs\":\"CH7\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":96.0,\"clock_frequency\":");
     Serial.print(est_clock);
     Serial.print(",\"CPOL\":0,\"CPHA\":0,\"data_bits\":8,\"bus_speed\":\"");
     Serial.print(est_clock / 1000.0, 1);
@@ -406,22 +360,14 @@ void analyzeProtocol() {
     // Update LCD
     static String last_spi = "";
     String new_spi = String(est_clock/1000) + " kHz Clock";
-    if (decoded_count > 0) {
+    if (last_spi != new_spi) {
       lcd_busy = true;
       lcd.clear();
-      if (is_rfid) {
-        lcd.print("RFID TAG READ");
-        lcd.setCursor(0, 1);
-        String uid_summary = "";
-        for(int k=0; k<min(decoded_count, 16); k++) uid_summary += (char)decoded_bytes[k];
-        lcd.print(uid_summary);
-      } else if (last_spi != new_spi) {
-        lcd.print("SPI DETECTED");
-        lcd.setCursor(0, 1);
-        lcd.print(new_spi);
-        last_spi = new_spi;
-      }
+      lcd.print("SPI DETECTED");
+      lcd.setCursor(0, 1);
+      lcd.print(new_spi);
       lcd_busy = false;
+      last_spi = new_spi;
     }
   }
 }
@@ -430,7 +376,7 @@ void setup() {
   Serial.begin(115200);
   
   // Monitoring channels
-  pinMode(36, INPUT); // CH1 (UART) 
+  pinMode(36, INPUT); // CH1 (UART / RFID)
   pinMode(39, INPUT); // CH2 (I2C SDA) 
   pinMode(34, INPUT); // CH3 (I2C SCL) 
   pinMode(35, INPUT); // CH4 (SPI SCK) 
@@ -440,12 +386,23 @@ void setup() {
   
   // LCD on default ESP32 I2C pins (GPIO 21 = SDA, GPIO 22 = SCL)
   Wire.begin(21, 22);
+  Wire.setClock(100000);
+  
+  // Check if LCD is at address 0x27 or 0x3F
+  Wire.beginTransmission(0x27);
+  if (Wire.endTransmission() != 0) {
+    Wire.beginTransmission(0x3F);
+    if (Wire.endTransmission() == 0) {
+      lcd = LiquidCrystal_I2C(0x3F, 16, 2);
+    }
+  }
+  
   lcd.init();
   lcd.backlight();
   lcd.clear();
   lcd.print("AUTOSCOPE READY");
   lcd.setCursor(0, 1);
-  lcd.print("SCANNING BUS...");
+  lcd.print("SCANNING CH1-CH7");
 }
 
 void loop() {

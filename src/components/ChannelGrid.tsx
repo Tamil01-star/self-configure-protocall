@@ -40,8 +40,8 @@ export const ChannelGrid: React.FC<ChannelGridProps> = ({
         
         // Check if the protocol explicitly assigned this channel via parameters
         let isParamAssigned = false;
-        if (protocol === 'UART' || protocol === 'RS232' || protocol === 'RS485' || protocol === 'CAN' || protocol === 'LIN') {
-          isParamAssigned = parameters.channel === hw.id;
+        if (protocol === 'UART' || protocol === 'RFID' || protocol === 'RS232' || protocol === 'RS485' || protocol === 'CAN' || protocol === 'LIN') {
+          isParamAssigned = (parameters.channel === hw.id) || (hw.id === 'CH1');
         } else if (protocol === 'I2C') {
           isParamAssigned = parameters.sdaChannel === hw.id || parameters.sclChannel === hw.id;
         } else if (protocol === 'SPI') {
@@ -57,7 +57,8 @@ export const ChannelGrid: React.FC<ChannelGridProps> = ({
 
         let role = chSample?.assignedLabel;
         if (!role && isParamAssigned && protocol) {
-          if (['UART', 'RS232', 'RS485'].includes(protocol)) role = `${protocol} DATA`;
+          if (protocol === 'RFID') role = 'RFID UID DATA';
+          else if (['UART', 'RS232', 'RS485'].includes(protocol)) role = `${protocol} DATA`;
           else if (protocol === 'CAN') role = 'CAN BUS';
           else if (protocol === 'LIN') role = 'LIN BUS';
           else if (protocol === 'I2C' && parameters.sdaChannel === hw.id) role = 'I²C SDA';
