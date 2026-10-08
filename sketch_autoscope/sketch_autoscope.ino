@@ -3,7 +3,8 @@
 #include <LiquidCrystal_I2C.h>
 #include "soc/gpio_reg.h"
 
-LiquidCrystal_I2C lcd(0x27, 16, 2); // Change 0x27 to 0x3F if your LCD stays blank
+// LCD is on WIRE1 (GPIO16=SDA, GPIO17=SCL) — completely isolated from monitoring channels
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 #define MAX_SAMPLES 4000
 uint32_t transition_times[MAX_SAMPLES];
@@ -22,7 +23,10 @@ volatile int sample_count = 0;
 #define CHANNEL_MASK ((1ULL<<36) | (1ULL<<39) | (1ULL<<34) | (1ULL<<35) | (1ULL<<32) | (1ULL<<33) | (1ULL<<25))
 
 void IRAM_ATTR captureSignal() {
-  // Read GPIO 0-31 (GPIO_IN_REG) and GPIO 32-39 (GPIO_IN1_REG) perfectly combined!
+  // Skip if LCD is currently writing — its I2C pulses look like external signals!
+  if (lcd_busy) return;
+
+  // Read GPIO 0-31 and GPIO 32-39 fused into a single 64-bit snapshot
   uint64_t current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
   current_state &= CHANNEL_MASK;
   
@@ -30,17 +34,16 @@ void IRAM_ATTR captureSignal() {
   uint32_t start_time = micros();
   sample_count = 0;
 
-  // 1. Wait for Bus Stability (Anti-Noise Filter)
-  // Ensures floating pins don't trigger the analyzer randomly. The bus must be stable for 5ms.
+  // 1. Wait for Bus Stability (Anti-Noise Filter) — 1ms is sufficient, 5ms was too slow
   uint32_t stable_start = micros();
-  while(micros() - stable_start < 5000) {
+  while(micros() - stable_start < 1000) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
     if (current_state != last_state) {
       stable_start = micros(); // Reset stability timer
       last_state = current_state;
     }
-    if (micros() - start_time > 500000) return; // 500ms timeout if it never stabilizes (constant floating noise)
+    if (micros() - start_time > 200000) return; // 200ms timeout
   }
 
   // 2. Wait for ANY of the 7 channels to change state (trigger)
@@ -51,9 +54,9 @@ void IRAM_ATTR captureSignal() {
     if(micros() - start_time > 1000000) return; // 1 second timeout
   }
 
-  // Fast Capture loop
+  // Fast Capture loop — 20ms window is enough for multiple bytes at 9600 baud
   start_time = micros();
-  while(sample_count < MAX_SAMPLES && (micros() - start_time < 50000)) {
+  while(sample_count < MAX_SAMPLES && (micros() - start_time < 20000)) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
     if(current_state != last_state) {
@@ -113,7 +116,7 @@ void analyzeProtocol() {
     Serial.print("{\"id\":\""); Serial.print(id); 
     Serial.print("\",\"label\":\""); Serial.print(label); 
     Serial.print("\",\"data\":[");
-    int limit = min((int)sample_count, 100);
+    int limit = min((int)sample_count, 64);
     for(int i=0; i<limit; i++) {
       Serial.print((transition_states[i] & (1ULL<<bit_pos)) ? 1 : 0);
       if (i < limit - 1) Serial.print(",");
@@ -204,11 +207,12 @@ void analyzeProtocol() {
     }
     Serial.println("]}");
     
-    // Non-blocking LCD Update
     static String last_uart = "";
     String new_uart = String(est_baud) + " Baud";
     if (valid_bytes > 0 && last_uart != new_uart) {
+      lcd_busy = true;
       lcd.clear(); lcd.print("UART DETECTED"); lcd.setCursor(0,1); lcd.print(new_uart);
+      lcd_busy = false;
       last_uart = new_uart;
     }
   }
@@ -240,11 +244,12 @@ void analyzeProtocol() {
     }
     Serial.println("]}");
     
-    // Non-blocking LCD Update
     static String last_i2c = "";
     String new_i2c = String(est_clock/1000) + " kHz Clock";
     if (valid_bytes > 0 && last_i2c != new_i2c) {
+      lcd_busy = true;
       lcd.clear(); lcd.print("I2C DETECTED"); lcd.setCursor(0,1); lcd.print(new_i2c);
+      lcd_busy = false;
       last_i2c = new_i2c;
     }
   }
@@ -278,32 +283,33 @@ void analyzeProtocol() {
     }
     Serial.println("]}");
     
-    // Non-blocking LCD Update
     static String last_spi = "";
     String new_spi = String(est_clock/1000) + " kHz Clock";
     if (valid_bytes > 0 && last_spi != new_spi) {
+      lcd_busy = true;
       lcd.clear(); lcd.print("SPI DETECTED"); lcd.setCursor(0,1); lcd.print(new_spi);
+      lcd_busy = false;
       last_spi = new_spi;
     }
   }
 }
 
+volatile bool lcd_busy = false;  // Blackout flag: ignore I2C channels during LCD update
+
 void setup() {
   Serial.begin(115200);
   
-  // NEW HARDWARE PIN ASSIGNMENTS
-  // IMPORTANT: GPIO36, 39, 34, 35 are INPUT ONLY and DO NOT have pull resistors.
-  // They must be externally pulled high/low by the Test Generator!
+  // MONITORING CHANNEL PINS (Input Only — must be driven by Test Generator)
   pinMode(36, INPUT); // CH1 (UART) 
   pinMode(39, INPUT); // CH2 (I2C SDA) 
   pinMode(34, INPUT); // CH3 (I2C SCL) 
   pinMode(35, INPUT); // CH4 (SPI SCK) 
-  
   pinMode(32, INPUT_PULLDOWN); // CH5 (SPI MOSI)
   pinMode(33, INPUT_PULLDOWN); // CH6 (SPI MISO)
   pinMode(25, INPUT_PULLDOWN); // CH7 (SPI CS)
   
-  Wire.begin();
+  // LCD on default ESP32 I2C pins GPIO 21 (SDA) and GPIO 22 (SCL)
+  Wire.begin(21, 22);
   lcd.init();
   lcd.backlight();
   lcd.print("AUTOSCOPE");
