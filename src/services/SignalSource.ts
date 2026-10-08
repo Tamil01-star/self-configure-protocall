@@ -199,12 +199,7 @@ export class SerialHardwareDriver {
         }))
       : [];
 
-    // NOISE FILTER: If the ESP32 claims to have detected a protocol (like I2C or UART), 
-    // but failed to decode a SINGLE valid byte, it means it triggered on floating EMF noise!
-    // We ignore this payload so the dashboard doesn't flash fake noisy waveforms.
-    if (protocol && protocol !== 'UNKNOWN' && decodedRows.length === 0) {
-      return null;
-    }
+    // Always process valid hardware payloads so the dashboard updates live without getting stuck loading
 
     // ── EVIDENCE: Only from real firmware, no fabrication ─────────────────
     const evidence: string[] = Array.isArray(json.evidence) ? json.evidence : [];

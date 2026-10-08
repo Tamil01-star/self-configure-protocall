@@ -3,30 +3,30 @@
 #include <LiquidCrystal_I2C.h>
 #include "soc/gpio_reg.h"
 
-// LCD is on WIRE1 (GPIO16=SDA, GPIO17=SCL) — completely isolated from monitoring channels
+// LCD on default ESP32 I2C pins (GPIO 21 = SDA, GPIO 22 = SCL)
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+volatile bool lcd_busy = false; // Declared at top so captureSignal() can see it!
 
 #define MAX_SAMPLES 4000
 uint32_t transition_times[MAX_SAMPLES];
-uint64_t transition_states[MAX_SAMPLES]; // Expanded to 64-bit to capture GPIO 32-39
+uint64_t transition_states[MAX_SAMPLES]; // 64-bit to capture GPIO 32-39
 volatile int sample_count = 0;
 
-// NEW HARDWARE MAPPING (Left Side of ESP32)
-// CH1 = GPIO36 (Bit 36)
-// CH2 = GPIO39 (Bit 39)
-// CH3 = GPIO34 (Bit 34)
-// CH4 = GPIO35 (Bit 35)
-// CH5 = GPIO32 (Bit 32)
-// CH6 = GPIO33 (Bit 33)
-// CH7 = GPIO25 (Bit 25)
+// CHANNEL MAPPING (Left Side of ESP32)
+// CH1 = GPIO36 (Bit 36) -> UART TX
+// CH2 = GPIO39 (Bit 39) -> I2C SDA
+// CH3 = GPIO34 (Bit 34) -> I2C SCL
+// CH4 = GPIO35 (Bit 35) -> SPI SCK
+// CH5 = GPIO32 (Bit 32) -> SPI MOSI
+// CH6 = GPIO33 (Bit 33) -> SPI MISO
+// CH7 = GPIO25 (Bit 25) -> SPI CS
 
 #define CHANNEL_MASK ((1ULL<<36) | (1ULL<<39) | (1ULL<<34) | (1ULL<<35) | (1ULL<<32) | (1ULL<<33) | (1ULL<<25))
 
 void IRAM_ATTR captureSignal() {
-  // Skip if LCD is currently writing — its I2C pulses look like external signals!
-  if (lcd_busy) return;
+  if (lcd_busy) return; // Do not sample while LCD is actively updating
 
-  // Read GPIO 0-31 and GPIO 32-39 fused into a single 64-bit snapshot
   uint64_t current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
   current_state &= CHANNEL_MASK;
   
@@ -34,27 +34,27 @@ void IRAM_ATTR captureSignal() {
   uint32_t start_time = micros();
   sample_count = 0;
 
-  // 1. Wait for Bus Stability (Anti-Noise Filter) — 1ms is sufficient, 5ms was too slow
+  // 1. Wait for bus stability (1ms)
   uint32_t stable_start = micros();
   while(micros() - stable_start < 1000) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
     if (current_state != last_state) {
-      stable_start = micros(); // Reset stability timer
+      stable_start = micros();
       last_state = current_state;
     }
     if (micros() - start_time > 200000) return; // 200ms timeout
   }
 
-  // 2. Wait for ANY of the 7 channels to change state (trigger)
+  // 2. Wait for ANY channel trigger
   start_time = micros();
   while(current_state == last_state) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
-    if(micros() - start_time > 1000000) return; // 1 second timeout
+    if(micros() - start_time > 1000000) return; // 1s timeout
   }
 
-  // Fast Capture loop — 20ms window is enough for multiple bytes at 9600 baud
+  // 3. Fast capture (20ms window)
   start_time = micros();
   while(sample_count < MAX_SAMPLES && (micros() - start_time < 20000)) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
@@ -70,48 +70,32 @@ void IRAM_ATTR captureSignal() {
 
 void analyzeProtocol() {
   if (sample_count < 10) return; 
-  
-  int uart_transitions = 0;
-  int i2c_transitions = 0;
-  int spi_transitions = 0;
-  
+
+  int uart_transitions = 0; // CH1 (GPIO36)
+  int sda_transitions = 0;  // CH2 (GPIO39)
+  int scl_transitions = 0;  // CH3 (GPIO34)
+  int spi_sck = 0;          // CH4 (GPIO35)
+  int spi_data = 0;         // CH5,6,7 (GPIO32, 33, 25)
+
   for(int i=1; i<sample_count; i++) {
     uint64_t diff = transition_states[i] ^ transition_states[i-1];
-    if(diff & (1ULL<<36)) uart_transitions++;                                    // CH1 (UART) GPIO36
-    if(diff & ((1ULL<<39) | (1ULL<<34))) i2c_transitions++;                      // CH2, CH3 (I2C) GPIO39, 34
-    if(diff & ((1ULL<<35) | (1ULL<<32) | (1ULL<<33) | (1ULL<<25))) spi_transitions++;    // CH4-7 (SPI) GPIO35, 32, 33, 25
+    if(diff & (1ULL<<36)) uart_transitions++;
+    if(diff & (1ULL<<39)) sda_transitions++;
+    if(diff & (1ULL<<34)) scl_transitions++;
+    if(diff & (1ULL<<35)) spi_sck++;
+    if(diff & ((1ULL<<32) | (1ULL<<33) | (1ULL<<25))) spi_data++;
   }
 
-  // Advanced Digital Noise Filter for Floating Input-Only Pins (34, 35, 36, 39)
-  auto checkNoise = [&](int bit_pos) {
-    int noise_pulses = 0;
-    uint32_t last_t = 0;
-    for(int i=0; i<sample_count; i++) {
-        if(i>0) {
-            bool prev = (transition_states[i-1] & (1ULL<<bit_pos));
-            bool curr = (transition_states[i] & (1ULL<<bit_pos));
-            if(prev != curr) {
-                if (transition_times[i] - last_t < 4) noise_pulses++;
-                last_t = transition_times[i];
-            }
-        } else last_t = transition_times[i];
-    }
-    return noise_pulses > 15; // If more than 15 ultra-fast (<4us) transitions, it's floating noise!
-  };
+  // STRICT HARDWARE VERIFICATION:
+  // I2C requires BOTH clock (SCL >= 16 transitions) AND data (SDA >= 4 transitions).
+  // If either pin is unconnected/idle, i2c_transitions is ZERO — ghost waveforms are impossible!
+  int i2c_transitions = (scl_transitions >= 16 && sda_transitions >= 4) ? (sda_transitions + scl_transitions) : 0;
+  int spi_transitions = (spi_sck >= 16 && spi_data >= 2) ? (spi_sck + spi_data) : 0;
 
-  // Disqualify floating channels
-  if (checkNoise(36)) uart_transitions = 0;
-  if (checkNoise(39) || checkNoise(34)) i2c_transitions = 0;
-  if (checkNoise(35) || checkNoise(32) || checkNoise(33) || checkNoise(25)) spi_transitions = 0;
-
-  // Find the single dominant REAL protocol
+  // Dominant protocol
   int max_transitions = max(uart_transitions, max(i2c_transitions, spi_transitions));
-  
-  // Reject slow AC Mains Hum (50/60Hz) or random static by requiring a dense data burst
-  if (max_transitions < 15) return;
+  if (max_transitions < 10) return;
 
-  Serial.print("{");
-  
   auto printChannel = [&](const char* id, const char* label, int bit_pos) {
     Serial.print("{\"id\":\""); Serial.print(id); 
     Serial.print("\",\"label\":\""); Serial.print(label); 
@@ -124,23 +108,6 @@ void analyzeProtocol() {
     Serial.print("]}");
   };
 
-  int valid_bytes = 0;
-
-  auto printDecoded = [&](const char* ch, uint8_t byte_val, bool first) {
-    if(byte_val == 0 || byte_val > 126) return first; // Skip garbage
-    valid_bytes++;
-    if (!first) Serial.print(",");
-    Serial.print("{\"channel\":\""); Serial.print(ch); Serial.print("\",\"hex\":\"0x");
-    if(byte_val < 16) Serial.print("0");
-    Serial.print(byte_val, HEX);
-    Serial.print("\",\"ascii\":\"");
-    if (byte_val >= 32 && byte_val <= 126 && byte_val != '"' && byte_val != '\\') Serial.print((char)byte_val);
-    else Serial.print(".");
-    Serial.print("\"}");
-    return false;
-  };
-
-  // Helper to calculate min time diff
   auto getMinDiff = [&](int bit_pos) {
     uint32_t min_d = 999999;
     uint32_t last_t = 0;
@@ -160,18 +127,51 @@ void analyzeProtocol() {
     return min_d;
   };
 
-  if (max_transitions == uart_transitions) {
+  // =========================================================================
+  // 1. UART DETECTION (CH1 = GPIO36)
+  // =========================================================================
+  if (max_transitions == uart_transitions && uart_transitions >= 10) {
     uint32_t min_diff = getMinDiff(36);
     long est_baud = (min_diff < 999999) ? (1000000 / min_diff) : 9600;
     
-    // Aggressive mathematical snap to guarantee standard baud stability against noise
+    // Snap to standard baud rates
     if (est_baud < 14000) est_baud = 9600;
     else if (est_baud < 28000) est_baud = 19200;
     else if (est_baud < 48000) est_baud = 38400;
     else if (est_baud < 80000) est_baud = 57600;
     else est_baud = 115200;
 
-    Serial.print("\"protocol\":\"UART\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
+    long bit_time = 1000000 / est_baud;
+
+    // Buffer decoded characters
+    uint8_t decoded_bytes[32];
+    int decoded_count = 0;
+
+    for(int i=0; i<sample_count-1; i++) {
+      if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
+        uint32_t start_t = transition_times[i+1];
+        uint8_t byte_val = 0;
+        for(int b=0; b<8; b++) {
+          uint32_t sample_t = start_t + bit_time + (bit_time / 2) + (b * bit_time);
+          int state_val = 0;
+          for(int j=i+1; j<sample_count; j++) {
+            if (transition_times[j] > sample_t) { state_val = (transition_states[j-1] & (1ULL<<36)) ? 1 : 0; break; }
+            if (j == sample_count - 1) state_val = (transition_states[j] & (1ULL<<36)) ? 1 : 0;
+          }
+          if (state_val) byte_val |= (1 << b);
+        }
+        if (byte_val > 0) {
+          if (decoded_count < 32) decoded_bytes[decoded_count++] = byte_val;
+        }
+        uint32_t end_of_byte_t = start_t + (9 * bit_time);
+        while(i < sample_count-1 && transition_times[i+1] < end_of_byte_t) {
+          i++;
+        }
+      }
+    }
+
+    // Output JSON to Serial
+    Serial.print("{\"protocol\":\"UART\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
     Serial.print(est_baud);
     Serial.print(",\"data_bits\":8,\"parity\":\"None\",\"stop_bits\":1,\"bus_speed\":\"");
     Serial.print(est_baud / 1000.0, 1);
@@ -179,49 +179,64 @@ void analyzeProtocol() {
     printChannel("CH1", "TX", 36);
     Serial.print("],\"decoded\":[");
 
-    long bit_time = 1000000 / est_baud;
-    bool first = true;
-    for(int i=0; i<sample_count-1; i++) {
-       // Check for falling edge (Start Bit)
-       if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
-          uint32_t start_t = transition_times[i+1];
-          uint8_t byte_val = 0;
-          for(int b=0; b<8; b++) {
-             uint32_t sample_t = start_t + bit_time + (bit_time / 2) + (b * bit_time);
-             int state_val = 0;
-             for(int j=i+1; j<sample_count; j++) {
-                if (transition_times[j] > sample_t) { state_val = (transition_states[j-1] & (1ULL<<36)) ? 1 : 0; break; }
-                if (j == sample_count - 1) state_val = (transition_states[j] & (1ULL<<36)) ? 1 : 0;
-             }
-             if (state_val) byte_val |= (1 << b);
-          }
-          first = printDecoded("CH1", byte_val, first);
-          
-          // CRITICAL FIX: Skip all transitions that occurred during this byte so we don't treat data bits as start bits!
-          // A full byte is 10 bits (Start + 8 Data + Stop)
-          uint32_t end_of_byte_t = start_t + (9 * bit_time);
-          while(i < sample_count-1 && transition_times[i+1] < end_of_byte_t) {
-             i++;
-          }
-       }
+    for(int k=0; k<decoded_count; k++) {
+      if (k > 0) Serial.print(",");
+      Serial.print("{\"channel\":\"CH1\",\"hex\":\"0x");
+      if(decoded_bytes[k] < 16) Serial.print("0");
+      Serial.print(decoded_bytes[k], HEX);
+      Serial.print("\",\"ascii\":\"");
+      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126 && decoded_bytes[k] != '"' && decoded_bytes[k] != '\\') {
+        Serial.print((char)decoded_bytes[k]);
+      } else {
+        Serial.print(".");
+      }
+      Serial.print("\"}");
     }
     Serial.println("]}");
     
+    // Update LCD
     static String last_uart = "";
     String new_uart = String(est_baud) + " Baud";
-    if (valid_bytes > 0 && last_uart != new_uart) {
+    if (decoded_count > 0 && last_uart != new_uart) {
       lcd_busy = true;
-      lcd.clear(); lcd.print("UART DETECTED"); lcd.setCursor(0,1); lcd.print(new_uart);
+      lcd.clear();
+      lcd.print("UART DETECTED");
+      lcd.setCursor(0, 1);
+      lcd.print(new_uart);
       lcd_busy = false;
       last_uart = new_uart;
     }
   }
-  else if (max_transitions == i2c_transitions) {
-    uint32_t min_diff = getMinDiff(34); // SCL is CH3 (34)
-    long est_clock = (min_diff < 999999) ? (1000000 / (min_diff * 2)) : 100000;
-    if (est_clock > 80000 && est_clock < 120000) est_clock = 100000; // Snap
 
-    Serial.print("\"protocol\":\"I2C\",\"sda\":\"CH2\",\"scl\":\"CH3\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":97.0,\"clock_frequency\":");
+  // =========================================================================
+  // 2. I2C DETECTION (CH2 = SDA, CH3 = SCL) — Only when BOTH pins are ACTIVE!
+  // =========================================================================
+  else if (max_transitions == i2c_transitions && i2c_transitions >= 20) {
+    uint32_t min_diff = getMinDiff(34); // SCL (34)
+    long est_clock = (min_diff < 999999) ? (1000000 / (min_diff * 2)) : 100000;
+    if (est_clock > 80000 && est_clock < 120000) est_clock = 100000;
+
+    // Decode I2C bytes
+    uint8_t decoded_bytes[32];
+    int decoded_count = 0;
+    uint8_t current_byte = 0;
+    int bit_count = 0;
+
+    for(int i=1; i<sample_count; i++) {
+      if (!(transition_states[i-1] & (1ULL<<34)) && (transition_states[i] & (1ULL<<34))) {
+        bool sda_val = (transition_states[i] & (1ULL<<39));
+        current_byte = (current_byte << 1) | (sda_val ? 1 : 0);
+        bit_count++;
+        if (bit_count == 8) {
+          if (decoded_count < 32) decoded_bytes[decoded_count++] = current_byte;
+        } else if (bit_count == 9) bit_count = 0;
+      }
+    }
+
+    // Suppress fake I2C: if no real bytes were decoded, ignore!
+    if (decoded_count < 2) return;
+
+    Serial.print("{\"protocol\":\"I2C\",\"sda\":\"CH2\",\"scl\":\"CH3\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":97.0,\"clock_frequency\":");
     Serial.print(est_clock);
     Serial.print(",\"data_bits\":8,\"parity\":\"None\",\"stop_bits\":1,\"bus_speed\":\"");
     Serial.print(est_clock / 1000.0, 1);
@@ -229,36 +244,60 @@ void analyzeProtocol() {
     printChannel("CH2", "SDA", 39); Serial.print(","); printChannel("CH3", "SCL", 34);
     Serial.print("],\"decoded\":[");
 
-    bool first = true;
-    uint8_t current_byte = 0;
-    int bit_count = 0;
-    for(int i=1; i<sample_count; i++) {
-      if (!(transition_states[i-1] & (1ULL<<34)) && (transition_states[i] & (1ULL<<34))) {
-        bool sda_val = (transition_states[i] & (1ULL<<39));
-        current_byte = (current_byte << 1) | (sda_val ? 1 : 0);
-        bit_count++;
-        if (bit_count == 8) {
-          first = printDecoded("CH2", current_byte, first);
-        } else if (bit_count == 9) bit_count = 0;
-      }
+    for(int k=0; k<decoded_count; k++) {
+      if (k > 0) Serial.print(",");
+      Serial.print("{\"channel\":\"CH2\",\"hex\":\"0x");
+      if(decoded_bytes[k] < 16) Serial.print("0");
+      Serial.print(decoded_bytes[k], HEX);
+      Serial.print("\",\"ascii\":\"");
+      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126) Serial.print((char)decoded_bytes[k]);
+      else Serial.print(".");
+      Serial.print("\"}");
     }
     Serial.println("]}");
     
+    // Update LCD
     static String last_i2c = "";
     String new_i2c = String(est_clock/1000) + " kHz Clock";
-    if (valid_bytes > 0 && last_i2c != new_i2c) {
+    if (last_i2c != new_i2c) {
       lcd_busy = true;
-      lcd.clear(); lcd.print("I2C DETECTED"); lcd.setCursor(0,1); lcd.print(new_i2c);
+      lcd.clear();
+      lcd.print("I2C DETECTED");
+      lcd.setCursor(0, 1);
+      lcd.print(new_i2c);
       lcd_busy = false;
       last_i2c = new_i2c;
     }
   }
-  else if (max_transitions == spi_transitions) {
-    uint32_t min_diff = getMinDiff(35); // SCK is CH4 (35)
+
+  // =========================================================================
+  // 3. SPI DETECTION (CH4 = SCK, CH5 = MOSI, CH6 = MISO, CH7 = CS)
+  // =========================================================================
+  else if (max_transitions == spi_transitions && spi_transitions >= 20) {
+    uint32_t min_diff = getMinDiff(35); // SCK (35)
     long est_clock = (min_diff < 999999) ? (1000000 / (min_diff * 2)) : 100000;
     if (est_clock > 80000 && est_clock < 120000) est_clock = 100000;
 
-    Serial.print("\"protocol\":\"SPI\",\"sclk\":\"CH4\",\"mosi\":\"CH5\",\"miso\":\"CH6\",\"cs\":\"CH7\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":96.0,\"clock_frequency\":");
+    uint8_t decoded_bytes[32];
+    int decoded_count = 0;
+    uint8_t current_byte = 0;
+    int bit_count = 0;
+
+    for(int i=1; i<sample_count; i++) {
+      if (!(transition_states[i-1] & (1ULL<<35)) && (transition_states[i] & (1ULL<<35))) {
+        bool mosi_val = (transition_states[i] & (1ULL<<32));
+        current_byte = (current_byte << 1) | (mosi_val ? 1 : 0);
+        bit_count++;
+        if (bit_count == 8) {
+          if (decoded_count < 32) decoded_bytes[decoded_count++] = current_byte;
+          bit_count = 0;
+        }
+      }
+    }
+
+    if (decoded_count < 2) return;
+
+    Serial.print("{\"protocol\":\"SPI\",\"sclk\":\"CH4\",\"mosi\":\"CH5\",\"miso\":\"CH6\",\"cs\":\"CH7\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":96.0,\"clock_frequency\":");
     Serial.print(est_clock);
     Serial.print(",\"CPOL\":0,\"CPHA\":0,\"data_bits\":8,\"bus_speed\":\"");
     Serial.print(est_clock / 1000.0, 1);
@@ -267,39 +306,37 @@ void analyzeProtocol() {
     printChannel("CH6", "MISO", 33); Serial.print(","); printChannel("CH7", "CS", 25);
     Serial.print("],\"decoded\":[");
 
-    bool first = true;
-    uint8_t current_byte = 0;
-    int bit_count = 0;
-    for(int i=1; i<sample_count; i++) {
-      if (!(transition_states[i-1] & (1ULL<<35)) && (transition_states[i] & (1ULL<<35))) {
-        bool mosi_val = (transition_states[i] & (1ULL<<32));
-        current_byte = (current_byte << 1) | (mosi_val ? 1 : 0);
-        bit_count++;
-        if (bit_count == 8) {
-          first = printDecoded("CH5", current_byte, first);
-          bit_count = 0;
-        }
-      }
+    for(int k=0; k<decoded_count; k++) {
+      if (k > 0) Serial.print(",");
+      Serial.print("{\"channel\":\"CH5\",\"hex\":\"0x");
+      if(decoded_bytes[k] < 16) Serial.print("0");
+      Serial.print(decoded_bytes[k], HEX);
+      Serial.print("\",\"ascii\":\"");
+      if (decoded_bytes[k] >= 32 && decoded_bytes[k] <= 126) Serial.print((char)decoded_bytes[k]);
+      else Serial.print(".");
+      Serial.print("\"}");
     }
     Serial.println("]}");
     
+    // Update LCD
     static String last_spi = "";
     String new_spi = String(est_clock/1000) + " kHz Clock";
-    if (valid_bytes > 0 && last_spi != new_spi) {
+    if (last_spi != new_spi) {
       lcd_busy = true;
-      lcd.clear(); lcd.print("SPI DETECTED"); lcd.setCursor(0,1); lcd.print(new_spi);
+      lcd.clear();
+      lcd.print("SPI DETECTED");
+      lcd.setCursor(0, 1);
+      lcd.print(new_spi);
       lcd_busy = false;
       last_spi = new_spi;
     }
   }
 }
 
-volatile bool lcd_busy = false;  // Blackout flag: ignore I2C channels during LCD update
-
 void setup() {
   Serial.begin(115200);
   
-  // MONITORING CHANNEL PINS (Input Only — must be driven by Test Generator)
+  // Monitoring channels
   pinMode(36, INPUT); // CH1 (UART) 
   pinMode(39, INPUT); // CH2 (I2C SDA) 
   pinMode(34, INPUT); // CH3 (I2C SCL) 
@@ -308,13 +345,14 @@ void setup() {
   pinMode(33, INPUT_PULLDOWN); // CH6 (SPI MISO)
   pinMode(25, INPUT_PULLDOWN); // CH7 (SPI CS)
   
-  // LCD on default ESP32 I2C pins GPIO 21 (SDA) and GPIO 22 (SCL)
+  // LCD on default ESP32 I2C pins (GPIO 21 = SDA, GPIO 22 = SCL)
   Wire.begin(21, 22);
   lcd.init();
   lcd.backlight();
-  lcd.print("AUTOSCOPE");
+  lcd.clear();
+  lcd.print("AUTOSCOPE READY");
   lcd.setCursor(0, 1);
-  lcd.print("ANALYZING...");
+  lcd.print("SCANNING BUS...");
 }
 
 void loop() {
