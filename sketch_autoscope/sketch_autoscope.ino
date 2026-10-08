@@ -35,39 +35,26 @@ void IRAM_ATTR captureSignal() {
   uint64_t last_state = initial_state;
   sample_count = 0;
 
-  // 1. Wait for bus stability (1ms of no transitions)
-  uint32_t stable_start = micros();
-  uint32_t start_time = micros();
-  while(micros() - stable_start < 1000) {
-    current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
-    current_state &= CHANNEL_MASK;
-    if (current_state != last_state) {
-      stable_start = micros();
-      last_state = current_state;
-    }
-    if (micros() - start_time > 100000) break;
-  }
-
-  // 2. Record initial idle state as Sample 0
-  transition_states[0] = last_state;
+  // 1. Record initial idle state as Sample 0 (ensures first transition is relative to idle)
+  transition_states[0] = initial_state;
   transition_times[0] = micros();
   sample_count = 1;
 
-  // 3. Wait for ANY channel trigger transition
-  start_time = micros();
+  // 2. Wait for ANY monitored channel to change state (Trigger)
+  uint32_t start_time = micros();
   while(current_state == last_state) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
-    if(micros() - start_time > 500000) return; // 500ms timeout
+    if(micros() - start_time > 400000) return; // 400ms timeout
   }
 
-  // 4. Record trigger transition as Sample 1
+  // 3. Record trigger transition as Sample 1
   transition_states[1] = current_state;
   transition_times[1] = micros();
   last_state = current_state;
   sample_count = 2;
 
-  // 5. Fast capture all remaining transitions (50ms window)
+  // 4. Fast capture all remaining transitions (50ms window)
   start_time = micros();
   while(sample_count < MAX_SAMPLES && (micros() - start_time < 50000)) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
@@ -103,7 +90,7 @@ void analyzeProtocol() {
   int spi_transitions = (spi_sck >= 16 && spi_data >= 2) ? (spi_sck + spi_data) : 0;
 
   int max_transitions = max(uart_transitions, max(i2c_transitions, spi_transitions));
-  if (max_transitions < 4) return;
+  if (max_transitions < 2) return;
 
   auto printChannel = [&](const char* id, const char* label, int bit_pos) {
     Serial.print("{\"id\":\""); Serial.print(id); 
@@ -137,7 +124,7 @@ void analyzeProtocol() {
   // =========================================================================
   // 1. UART / RFID DETECTION (CH1 = GPIO36)
   // =========================================================================
-  if (max_transitions == uart_transitions && uart_transitions >= 4) {
+  if (max_transitions == uart_transitions && uart_transitions >= 2) {
     uint32_t min_diff = getMinDiff(36);
     long est_baud = (min_diff < 999999) ? (1000000 / min_diff) : 9600;
     
@@ -160,8 +147,11 @@ void analyzeProtocol() {
       if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
         uint32_t start_t = transition_times[i+1];
 
-        // Skip falling edges that occur inside a byte frame currently being sampled
+        // Skip falling edges that occur inside a character currently being sampled
         if (start_t < last_byte_end_t) continue;
+        
+        // Lock out edges during the 10-bit character frame (9.5T)
+        last_byte_end_t = start_t + (bit_time * 95) / 10;
         
         uint8_t byte_val = 0;
         
@@ -181,15 +171,10 @@ void analyzeProtocol() {
           if (state_val) byte_val |= (1 << b);
         }
         
-        // Accept valid printable ASCII characters
-        if (byte_val >= 32 && byte_val <= 126) {
-          if (decoded_count < 32) {
-            decoded_bytes[decoded_count] = byte_val;
-            decoded_start_times[decoded_count] = start_t;
-            decoded_count++;
-            // Lock out edges during the remainder of this 10-bit character frame (9.5T)
-            last_byte_end_t = start_t + (bit_time * 95) / 10;
-          }
+        if (decoded_count < 32) {
+          decoded_bytes[decoded_count] = byte_val;
+          decoded_start_times[decoded_count] = start_t;
+          decoded_count++;
         }
       }
     }
@@ -197,15 +182,18 @@ void analyzeProtocol() {
     // Check if this payload is an RFID UID
     char ascii_str[33];
     int copy_len = min(decoded_count, 32);
+    int printable_count = 0;
     for(int m=0; m<copy_len; m++) {
-      ascii_str[m] = (char)decoded_bytes[m];
+      char c = (char)decoded_bytes[m];
+      ascii_str[m] = (c >= 32 && c <= 126) ? c : '.';
+      if (c >= 32 && c <= 126) printable_count++;
     }
     ascii_str[copy_len] = '\0';
     String decoded_str = String(ascii_str);
 
     bool is_rfid = decoded_str.startsWith("UID:") || decoded_str.startsWith("RFID:");
 
-    // Output complete JSON packet to Serial
+    // Output complete JSON packet to Serial — ALWAYS outputs waveform so dashboard NEVER blanks!
     Serial.print("{\"protocol\":\"");
     Serial.print(is_rfid ? "RFID" : "UART");
     Serial.print("\",\"channel\":\"CH1\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":98.0,\"baud_rate\":");
@@ -240,31 +228,33 @@ void analyzeProtocol() {
     digitalWrite(LED_PIN, HIGH);
 
     // Update LCD with clean decoded text
-    static String last_display = "";
-    if (last_display != decoded_str && decoded_str.length() > 0) {
-      lcd_busy = true;
-      if (lcd) {
-        lcd->clear();
-        if (is_rfid) {
-          lcd->print("RFID CARD READ");
-          lcd->setCursor(0, 1);
-          lcd->print(decoded_str);
-        } else {
-          lcd->print(decoded_str);
-          lcd->setCursor(0, 1);
-          lcd->print(est_baud);
-          lcd->print(" Baud UART");
+    if (printable_count > 0) {
+      static String last_display = "";
+      if (last_display != decoded_str) {
+        lcd_busy = true;
+        if (lcd) {
+          lcd->clear();
+          if (is_rfid) {
+            lcd->print("RFID CARD READ");
+            lcd->setCursor(0, 1);
+            lcd->print(decoded_str);
+          } else {
+            lcd->print(decoded_str);
+            lcd->setCursor(0, 1);
+            lcd->print(est_baud);
+            lcd->print(" Baud UART");
+          }
         }
+        lcd_busy = false;
+        last_display = decoded_str;
       }
-      lcd_busy = false;
-      last_display = decoded_str;
     }
 
     digitalWrite(LED_PIN, LOW);
   }
 
   // =========================================================================
-  // 2. I2C DETECTION (CH2 = SDA, CH3 = SCL) — Only when BOTH pins are ACTIVE!
+  // 2. I2C DETECTION (CH2 = SDA, CH3 = SCL)
   // =========================================================================
   else if (max_transitions == i2c_transitions && i2c_transitions >= 20) {
     uint32_t min_diff = getMinDiff(34); // SCL (34)
@@ -286,8 +276,6 @@ void analyzeProtocol() {
         } else if (bit_count == 9) bit_count = 0;
       }
     }
-
-    if (decoded_count < 2) return;
 
     Serial.print("{\"protocol\":\"I2C\",\"sda\":\"CH2\",\"scl\":\"CH3\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":97.0,\"clock_frequency\":");
     Serial.print(est_clock);
@@ -353,8 +341,6 @@ void analyzeProtocol() {
         }
       }
     }
-
-    if (decoded_count < 2) return;
 
     Serial.print("{\"protocol\":\"SPI\",\"sclk\":\"CH4\",\"mosi\":\"CH5\",\"miso\":\"CH6\",\"cs\":\"CH7\",\"electrical_interface\":\"TTL 3.3V\",\"confidence\":96.0,\"clock_frequency\":");
     Serial.print(est_clock);
@@ -439,5 +425,21 @@ void setup() {
 
 void loop() {
   captureSignal();
-  if(sample_count > 0) analyzeProtocol();
+  if (sample_count >= 4) {
+    analyzeProtocol();
+  } else {
+    // Continuous live baseline so waveform canvas is NEVER blank while idle
+    static uint32_t last_idle_time = 0;
+    if (millis() - last_idle_time > 400) {
+      last_idle_time = millis();
+      uint64_t st = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
+      int lvl = (st & (1ULL << 36)) ? 1 : 0;
+      Serial.print("{\"protocol\":\"UART\",\"channel\":\"CH1\",\"state\":\"LISTENING\",\"confidence\":90.0,\"channels\":[{\"id\":\"CH1\",\"label\":\"TX\",\"data\":[");
+      for(int p=0; p<16; p++) {
+        Serial.print(lvl);
+        if(p < 15) Serial.print(",");
+      }
+      Serial.println("]}],\"decoded\":[]}");
+    }
+  }
 }
