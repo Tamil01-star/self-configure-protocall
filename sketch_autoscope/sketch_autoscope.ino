@@ -123,16 +123,14 @@ void analyzeProtocol() {
   auto getMinDiff = [&](int bit_pos) {
     uint32_t min_d = 999999;
     uint32_t last_t = 0;
-    for(int i=0; i<sample_count; i++) {
-      if(i>0) {
-        bool prev = (transition_states[i-1] & (1ULL<<bit_pos));
-        bool curr = (transition_states[i] & (1ULL<<bit_pos));
-        if(prev != curr) {
+    for(int i=1; i<sample_count; i++) {
+      bool prev = (transition_states[i-1] & (1ULL<<bit_pos));
+      bool curr = (transition_states[i] & (1ULL<<bit_pos));
+      if(prev != curr) {
+        if(last_t > 0) {
           uint32_t d = transition_times[i] - last_t;
-          if(last_t > 0 && d >= 4 && d < min_d) min_d = d;
-          last_t = transition_times[i];
+          if(d >= 4 && d < min_d) min_d = d;
         }
-      } else {
         last_t = transition_times[i];
       }
     }
@@ -142,7 +140,7 @@ void analyzeProtocol() {
   // =========================================================================
   // 1. UART DETECTION (CH1 = GPIO36)
   // =========================================================================
-  if (max_transitions == uart_transitions && uart_transitions >= 10) {
+  if (max_transitions == uart_transitions && uart_transitions >= 3) {
     uint32_t min_diff = getMinDiff(36);
     long est_baud = (min_diff < 999999) ? (1000000 / min_diff) : 9600;
     
@@ -185,8 +183,8 @@ void analyzeProtocol() {
             if (state_val) byte_val |= (1 << b);
           }
           
-          // Accept valid printable ASCII characters
-          if (byte_val >= 32 && byte_val <= 126) {
+          // Accept valid decoded bytes
+          if (byte_val > 0) {
             if (decoded_count < 32) {
               decoded_bytes[decoded_count] = byte_val;
               decoded_start_times[decoded_count] = start_t;
