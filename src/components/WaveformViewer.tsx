@@ -100,9 +100,29 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         '#2563eb', '#dc2626', '#0d9488',
       ];
 
-      const targetIndices = focusChannel
-        ? [parseInt(focusChannel.replace('CH', '')) - 1]
-        : [0, 1, 2, 3, 4, 5, 6];
+      let targetIndices: number[];
+      if (focusChannel) {
+        targetIndices = [parseInt(focusChannel.replace('CH', '')) - 1];
+      } else {
+        // STRICT PROTOCOL FILTER:
+        // Only draw lanes for channels that actually belong to the detected protocol.
+        // This is the definitive fix to prevent SDA/SCL appearing when UART is active, etc.
+        if (protocol === 'UART' || protocol === 'RS232' || protocol === 'RS485' || protocol === 'LIN') {
+          targetIndices = [0]; // CH1 only
+        } else if (protocol === 'I2C') {
+          targetIndices = [1, 2]; // CH2 (SDA) + CH3 (SCL) only
+        } else if (protocol === 'SPI') {
+          targetIndices = [3, 4, 5, 6]; // CH4 (SCK), CH5 (MOSI), CH6 (MISO), CH7 (CS) only
+        } else if (protocol === 'CAN') {
+          targetIndices = [4, 5]; // CH5 (CAN-H) + CH6 (CAN-L) only
+        } else {
+          // No protocol detected yet — show nothing until a real signal arrives
+          targetIndices = channels
+            .map(c => parseInt(c.id.replace('CH', '')) - 1)
+            .filter(idx => !isNaN(idx) && idx >= 0 && idx < 7);
+          if (targetIndices.length === 0) targetIndices = [0, 1, 2, 3, 4, 5, 6];
+        }
+      }
 
       const laneCount = targetIndices.length;
       const laneHeight = (height - 20) / laneCount;
