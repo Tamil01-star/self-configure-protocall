@@ -55,6 +55,8 @@ export function App() {
   });
 
   // Serial Driver Event Subscriptions
+  const isPausedRef = useRef<boolean>(false);
+
   useEffect(() => {
     const driver = driverRef.current;
 
@@ -67,6 +69,7 @@ export function App() {
         }));
 
         if (!connected) {
+          isPausedRef.current = false;
           setPayload({
             state: 'DISCONNECTED',
             protocol: null,
@@ -92,14 +95,13 @@ export function App() {
         }
       },
       onDataPayload: (newPayload) => {
+        if (isPausedRef.current) return; // Freeze view when STOP is active
         setPayload(newPayload);
         if (newPayload.lcdMessage) {
           setHardwareStatus(prev => ({ ...prev, lcd_status: `MSG: "${newPayload.lcdMessage}"` }));
         }
       },
-      onRawLog: () => {
-        // We removed the console view in the simple UI
-      },
+      onRawLog: () => {},
       onError: (err) => {
         console.error(`[SERIAL ERROR]`, err);
       }
@@ -125,8 +127,9 @@ export function App() {
   const handleStartCapture = useCallback(async () => {
     if (!hardwareStatus.esp32_2_connected) return;
     try {
+      isPausedRef.current = false;
       await driverRef.current.sendCommand('START');
-      // DO NOT fake state here. Wait for ESP32 to actually send telemetry.
+      setPayload(prev => ({ ...prev, state: 'CAPTURING' }));
     } catch (err: any) {
       alert(`Command Error: ${err.message}`);
     }
@@ -135,8 +138,9 @@ export function App() {
   const handleStopCapture = useCallback(async () => {
     if (!hardwareStatus.esp32_2_connected) return;
     try {
+      isPausedRef.current = true;
       await driverRef.current.sendCommand('STOP');
-      // DO NOT fake state here. Wait for ESP32 to actually send telemetry.
+      setPayload(prev => ({ ...prev, state: 'PAUSED' }));
     } catch (err: any) {
       alert(`Command Error: ${err.message}`);
     }

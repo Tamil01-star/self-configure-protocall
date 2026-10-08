@@ -8,6 +8,7 @@ export type AnalyzerState =
   | 'TESTING HYPOTHESES'
   | 'VALIDATING'
   | 'DETECTED'
+  | 'PAUSED'
   | 'UNKNOWN'
   | 'ERROR';
 

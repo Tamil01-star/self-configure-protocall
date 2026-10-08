@@ -355,7 +355,39 @@ void setup() {
   lcd.print("SCANNING BUS...");
 }
 
+bool is_capturing = true;
+
+void handleCommands() {
+  if (Serial.available() > 0) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    cmd.toUpperCase();
+    if (cmd == "STOP" || cmd == "PAUSE") {
+      is_capturing = false;
+      Serial.println("{\"state\":\"STOPPED\",\"statusText\":\"Capture Paused by User\"}");
+      lcd_busy = true;
+      lcd.clear();
+      lcd.print("AUTOSCOPE");
+      lcd.setCursor(0, 1);
+      lcd.print("PAUSED");
+      lcd_busy = false;
+    } else if (cmd == "START" || cmd == "RESUME") {
+      is_capturing = true;
+      Serial.println("{\"state\":\"CAPTURING\",\"statusText\":\"Capture Resumed by User\"}");
+      lcd_busy = true;
+      lcd.clear();
+      lcd.print("AUTOSCOPE");
+      lcd.setCursor(0, 1);
+      lcd.print("SCANNING BUS...");
+      lcd_busy = false;
+    }
+  }
+}
+
 void loop() {
-  captureSignal();
-  if(sample_count > 0) analyzeProtocol();
+  handleCommands();
+  if (is_capturing) {
+    captureSignal();
+    if(sample_count > 0) analyzeProtocol();
+  }
 }
