@@ -148,6 +148,7 @@ void analyzeProtocol() {
     long bit_time = 1000000 / est_baud;
     bool first = true;
     for(int i=0; i<sample_count-1; i++) {
+       // Check for falling edge (Start Bit)
        if ((transition_states[i] & (1ULL<<36)) && !(transition_states[i+1] & (1ULL<<36))) {
           uint32_t start_t = transition_times[i+1];
           uint8_t byte_val = 0;
@@ -161,6 +162,13 @@ void analyzeProtocol() {
              if (state_val) byte_val |= (1 << b);
           }
           first = printDecoded("CH1", byte_val, first);
+          
+          // CRITICAL FIX: Skip all transitions that occurred during this byte so we don't treat data bits as start bits!
+          // A full byte is 10 bits (Start + 8 Data + Stop)
+          uint32_t end_of_byte_t = start_t + (9 * bit_time);
+          while(i < sample_count-1 && transition_times[i+1] < end_of_byte_t) {
+             i++;
+          }
        }
     }
     Serial.println("]}");
