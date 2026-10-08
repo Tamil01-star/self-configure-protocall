@@ -28,29 +28,29 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const defaultChannelPinMap = [
-    { defaultLabel: 'CH1 (GPIO 4)  → UART / SDA / SCLK' },
-    { defaultLabel: 'CH2 (GPIO 13) → SCL / MOSI' },
-    { defaultLabel: 'CH3 (GPIO 14) → MISO' },
-    { defaultLabel: 'CH4 (GPIO 25) → CS' },
-    { defaultLabel: 'CH5 (GPIO 26) → RS-485 A / CAN-H' },
-    { defaultLabel: 'CH6 (GPIO 27) → RS-485 B / CAN-L' },
-    { defaultLabel: 'CH7 (GPIO 15) → LIN / AUX RX' },
+    { defaultLabel: 'CH1 (GPIO 36) → UART TX' },
+    { defaultLabel: 'CH2 (GPIO 39) → I²C SDA' },
+    { defaultLabel: 'CH3 (GPIO 34) → I²C SCL' },
+    { defaultLabel: 'CH4 (GPIO 35) → SPI SCK' },
+    { defaultLabel: 'CH5 (GPIO 32) → SPI MOSI' },
+    { defaultLabel: 'CH6 (GPIO 33) → SPI MISO' },
+    { defaultLabel: 'CH7 (GPIO 25) → SPI CS' },
   ];
 
   const getChannelLabel = (idx: number, ch?: DigitalChannelSample): string => {
     if (ch?.assignedLabel && ch.assignedLabel !== `CH${idx + 1}`) {
       return ch.assignedLabel;
     }
-    if (protocol === 'UART' && idx === 0) return 'CH1 (GPIO 4)  → UART TX/RX DATA';
+    if (protocol === 'UART' && idx === 0) return 'CH1 (GPIO 36) → UART TX DATA';
     if (protocol === 'I2C') {
-      if (idx === 0) return 'CH1 (GPIO 4)  → I²C SDA DATA';
-      if (idx === 1) return 'CH2 (GPIO 13) → I²C SCL CLOCK';
+      if (idx === 1) return 'CH2 (GPIO 39) → I²C SDA DATA';
+      if (idx === 2) return 'CH3 (GPIO 34) → I²C SCL CLOCK';
     }
     if (protocol === 'SPI') {
-      if (idx === 0) return 'CH1 (GPIO 4)  → SPI SCLK CLOCK';
-      if (idx === 1) return 'CH2 (GPIO 13) → SPI MOSI';
-      if (idx === 2) return 'CH3 (GPIO 14) → SPI MISO';
-      if (idx === 3) return 'CH4 (GPIO 25) → SPI CS';
+      if (idx === 3) return 'CH4 (GPIO 35) → SPI SCK CLOCK';
+      if (idx === 4) return 'CH5 (GPIO 32) → SPI MOSI DATA';
+      if (idx === 5) return 'CH6 (GPIO 33) → SPI MISO DATA';
+      if (idx === 6) return 'CH7 (GPIO 25) → SPI CS SELECT';
     }
     return defaultChannelPinMap[idx]?.defaultLabel || `CH${idx + 1}`;
   };
@@ -174,16 +174,14 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         ctx.beginPath();
 
         const startX = 150;
-        const bitWidthPx = 28;
+        const bitWidthPx = 32;
         let currentX = startX;
-        let patternIdx = 0; // Fixed view: always start from the first captured bit
-        let lastState = bitPattern[patternIdx];
+        let lastState = bitPattern[0];
 
         ctx.moveTo(currentX, lastState === 1 ? signalHighY : signalLowY);
 
-        for (let x = startX; x < width; x += bitWidthPx) {
-          patternIdx = (patternIdx + 1) % bitPattern.length;
-          const state = bitPattern[patternIdx];
+        for (let x = startX, p = 0; x < width; x += bitWidthPx, p++) {
+          const state = bitPattern[p % bitPattern.length];
           const nextX = Math.min(width, currentX + bitWidthPx);
           if (state !== lastState) {
             ctx.lineTo(currentX, state === 1 ? signalHighY : signalLowY);
@@ -193,6 +191,60 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
           currentX = nextX;
         }
         ctx.stroke();
+
+        // ── BIT ANNOTATIONS: START, DATA (D0-D7), PARITY, STOP ──
+        if (chActive) {
+          let bitCellIdx = 0;
+          for (let x = startX; x < width; x += bitWidthPx) {
+            const nextX = Math.min(width, x + bitWidthPx);
+            const cellCenterX = x + (nextX - x) / 2;
+
+            // Draw dashed vertical bit boundary line
+            ctx.setLineDash([2, 2]);
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x, laneTop + 2);
+            ctx.lineTo(x, laneTop + laneHeight - 2);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset line dash
+
+            const isSerialProtocol = !protocol || ['UART', 'RFID', 'RS232', 'RS485', 'LIN'].includes(protocol);
+            if (isSerialProtocol && cellCenterX + 10 < width) {
+              const frameBit = bitCellIdx % 10;
+              let tagText = '';
+              let tagBg = '#0284c7';
+
+              if (frameBit === 0) {
+                tagText = 'START';
+                tagBg = '#ef4444'; // Red for START bit
+              } else if (frameBit >= 1 && frameBit <= 8) {
+                tagText = `D${frameBit - 1}`;
+                tagBg = '#0284c7'; // Blue for DATA bits (D0..D7)
+              } else if (frameBit === 9) {
+                tagText = 'STOP';
+                tagBg = '#10b981'; // Green for STOP bit
+              }
+
+              // Draw bit label badge
+              ctx.font = 'bold 8px monospace';
+              const textWidth = ctx.measureText(tagText).width;
+              const badgeW = textWidth + 6;
+              const badgeH = 11;
+              const badgeX = cellCenterX - badgeW / 2;
+              const badgeY = laneTop + 2;
+
+              ctx.fillStyle = tagBg;
+              ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+
+              ctx.fillStyle = '#ffffff';
+              ctx.textAlign = 'center';
+              ctx.fillText(tagText, cellCenterX, badgeY + 8.5);
+            }
+
+            bitCellIdx++;
+          }
+        }
 
         // Show "IDLE" label on channels with no real signal
         if (!chActive) {
@@ -213,8 +265,14 @@ export const WaveformViewer: React.FC<WaveformViewerProps> = ({
         <div className="flex items-center space-x-2">
           <Activity className="w-3.5 h-3.5 text-instrument-blue" />
           <span className="font-bold text-instrument-textBright uppercase">
-            7-CHANNEL DIGITAL LOGIC WAVEFORM CAPTURE (CH1 – CH7 PINS)
+            7-CHANNEL DIGITAL LOGIC WAVEFORM CAPTURE
           </span>
+          <div className="flex items-center space-x-1 text-[9px] font-mono ml-2">
+            <span className="px-1.5 py-0.5 bg-red-500 text-white font-bold rounded">START (S)</span>
+            <span className="px-1.5 py-0.5 bg-sky-600 text-white font-bold rounded">DATA (D0-D7)</span>
+            <span className="px-1.5 py-0.5 bg-purple-600 text-white font-bold rounded">PARITY (P)</span>
+            <span className="px-1.5 py-0.5 bg-emerald-600 text-white font-bold rounded">STOP (ST)</span>
+          </div>
         </div>
         <div className="flex items-center space-x-2 text-[10px] font-semibold">
           <Radio className={`w-3 h-3 ${anyRealSignal ? 'text-instrument-green animate-pulse' : 'text-instrument-amber'}`} />
