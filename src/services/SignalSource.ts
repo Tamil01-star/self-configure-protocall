@@ -190,14 +190,14 @@ export class SerialHardwareDriver {
           hex: d.hex || (typeof d.dec === 'number' ? `0x${d.dec.toString(16).toUpperCase().padStart(2, '0')}` : '0x00'),
           dec: typeof d.dec === 'number' && d.dec > 0 ? d.dec : (d.hex ? parseInt(d.hex, 16) || 0 : 0),
           ascii: (() => {
+            if (typeof d.ascii === 'string' && d.ascii.length === 1 && d.ascii !== '?' && d.ascii !== '.') {
+              return d.ascii;
+            }
             const decVal = typeof d.dec === 'number' && d.dec > 0 
               ? d.dec 
               : (d.hex ? parseInt(d.hex, 16) || 0 : 0);
             if (decVal >= 32 && decVal <= 126) {
               return String.fromCharCode(decVal);
-            }
-            if (d.ascii && d.ascii !== '?' && d.ascii !== '.') {
-              return d.ascii;
             }
             return '.';
           })(),

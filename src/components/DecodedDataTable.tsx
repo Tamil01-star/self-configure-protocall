@@ -36,6 +36,11 @@ export const DecodedDataTable: React.FC<DecodedDataTableProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const fullText = rows
+    .map((r) => r.ascii)
+    .filter((a) => a && a !== '?' && a !== '.')
+    .join('');
+
   return (
     <div className="instrument-card flex flex-col h-full select-none overflow-hidden font-mono text-xs">
       {/* Header Controls */}
@@ -100,6 +105,23 @@ export const DecodedDataTable: React.FC<DecodedDataTableProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Prominent Assembled Decoded ASCII Message Banner */}
+      {fullText && (
+        <div className="bg-instrument-panel/90 border-b border-instrument-border px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="text-[10px] uppercase font-bold text-instrument-textMuted tracking-wider">
+              DECODED ASCII OUTPUT:
+            </span>
+            <span className="px-2.5 py-0.5 bg-instrument-green/20 text-instrument-green border border-instrument-green/40 rounded text-sm font-mono font-bold tracking-widest shadow-sm">
+              "{fullText}"
+            </span>
+          </div>
+          <span className="text-[10px] text-instrument-textMuted font-mono">
+            {rows.length} BYTES (8N1)
+          </span>
+        </div>
+      )}
 
       {/* Main Table Content */}
       <div className="flex-1 overflow-auto bg-instrument-bg max-h-[300px] min-h-[160px]">
