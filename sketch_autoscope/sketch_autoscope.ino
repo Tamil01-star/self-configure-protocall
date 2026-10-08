@@ -79,7 +79,29 @@ void analyzeProtocol() {
     if(diff & ((1ULL<<35) | (1ULL<<32) | (1ULL<<33) | (1ULL<<25))) spi_transitions++;    // CH4-7 (SPI) GPIO35, 32, 33, 25
   }
 
-  // Find the single dominant protocol
+  // Advanced Digital Noise Filter for Floating Input-Only Pins (34, 35, 36, 39)
+  auto checkNoise = [&](int bit_pos) {
+    int noise_pulses = 0;
+    uint32_t last_t = 0;
+    for(int i=0; i<sample_count; i++) {
+        if(i>0) {
+            bool prev = (transition_states[i-1] & (1ULL<<bit_pos));
+            bool curr = (transition_states[i] & (1ULL<<bit_pos));
+            if(prev != curr) {
+                if (transition_times[i] - last_t < 4) noise_pulses++;
+                last_t = transition_times[i];
+            }
+        } else last_t = transition_times[i];
+    }
+    return noise_pulses > 15; // If more than 15 ultra-fast (<4us) transitions, it's floating noise!
+  };
+
+  // Disqualify floating channels
+  if (checkNoise(36)) uart_transitions = 0;
+  if (checkNoise(39) || checkNoise(34)) i2c_transitions = 0;
+  if (checkNoise(35) || checkNoise(32) || checkNoise(33) || checkNoise(25)) spi_transitions = 0;
+
+  // Find the single dominant REAL protocol
   int max_transitions = max(uart_transitions, max(i2c_transitions, spi_transitions));
   if (max_transitions < 3) return;
 
@@ -98,7 +120,7 @@ void analyzeProtocol() {
   };
 
   auto printDecoded = [&](const char* ch, uint8_t byte_val, bool first) {
-    if(byte_val == 0 || byte_val > 126) return false;
+    if(byte_val == 0 || byte_val > 126) return first;
     if (!first) Serial.print(",");
     Serial.print("{\"channel\":\""); Serial.print(ch); Serial.print("\",\"hex\":\"0x");
     if(byte_val < 16) Serial.print("0");
@@ -120,7 +142,7 @@ void analyzeProtocol() {
         bool curr = (transition_states[i] & (1ULL<<bit_pos));
         if(prev != curr) {
           uint32_t d = transition_times[i] - last_t;
-          if(last_t > 0 && d > 8 && d < min_d) min_d = d;
+          if(last_t > 0 && d >= 4 && d < min_d) min_d = d;
           last_t = transition_times[i];
         }
       } else {
