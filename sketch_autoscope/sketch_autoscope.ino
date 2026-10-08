@@ -35,26 +35,27 @@ void IRAM_ATTR captureSignal() {
   uint64_t last_state = initial_state;
   sample_count = 0;
 
-  // 1. Wait for CH1 (UART) or bus stability (1ms of no transitions)
+  // 1. Wait for bus stability (1ms of no transitions)
   uint32_t stable_start = micros();
   uint32_t start_time = micros();
   while(micros() - stable_start < 1000) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
-    if ((current_state & (1ULL << 36)) != (last_state & (1ULL << 36))) {
+    current_state &= CHANNEL_MASK;
+    if (current_state != last_state) {
       stable_start = micros();
       last_state = current_state;
     }
     if (micros() - start_time > 100000) break;
   }
 
-  // 2. Record initial idle state as Sample 0 (CH1 idle HIGH)
+  // 2. Record initial idle state as Sample 0
   transition_states[0] = last_state;
   transition_times[0] = micros();
   sample_count = 1;
 
-  // 3. Wait for Start Bit trigger (falling edge on GPIO 36 from 1 to 0)
+  // 3. Wait for ANY channel trigger transition
   start_time = micros();
-  while((current_state & (1ULL << 36)) == (last_state & (1ULL << 36))) {
+  while(current_state == last_state) {
     current_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
     current_state &= CHANNEL_MASK;
     if(micros() - start_time > 500000) return; // 500ms timeout
@@ -192,9 +193,6 @@ void analyzeProtocol() {
         }
       }
     }
-
-    // Suppress noise: only output packet if at least 1 valid ASCII character was decoded!
-    if (decoded_count == 0) return;
 
     // Check if this payload is an RFID UID
     char ascii_str[33];
