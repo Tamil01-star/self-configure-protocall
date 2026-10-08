@@ -10,7 +10,7 @@ volatile bool lcd_busy = false;
 
 #define MAX_SAMPLES 4000
 uint32_t transition_times[MAX_SAMPLES];
-uint64_t transition_states[MAX_SAMPLES]; // 64-bit to capture GPIO 32-39
+uint64_t transition_states[MAX_SAMPLES];
 volatile int sample_count = 0;
 
 // CHANNEL MAPPING (Left Side of ESP32)
@@ -25,7 +25,7 @@ volatile int sample_count = 0;
 #define CHANNEL_MASK ((1ULL<<36) | (1ULL<<39) | (1ULL<<34) | (1ULL<<35) | (1ULL<<32) | (1ULL<<33) | (1ULL<<25))
 
 void IRAM_ATTR captureSignal() {
-  if (lcd_busy) return; // Do not sample while LCD is actively updating
+  if (lcd_busy) return;
 
   uint64_t initial_state = (((uint64_t)REG_READ(GPIO_IN1_REG)) << 32) | REG_READ(GPIO_IN_REG);
   initial_state &= CHANNEL_MASK;
@@ -34,7 +34,7 @@ void IRAM_ATTR captureSignal() {
   uint64_t last_state = initial_state;
   sample_count = 0;
 
-  // 1. Record initial idle state as Sample 0
+  // 1. Record initial idle state as Sample 0 (ensures first 1->0 edge is at index 0)
   transition_states[0] = initial_state;
   transition_times[0] = micros();
   sample_count = 1;
@@ -85,8 +85,6 @@ void analyzeProtocol() {
     if(diff & ((1ULL<<32) | (1ULL<<33) | (1ULL<<25))) spi_data++;
   }
 
-  // Strict physical bus validation:
-  // I2C requires BOTH clock (SCL >= 16 transitions) AND data (SDA >= 4 transitions).
   int i2c_transitions = (scl_transitions >= 16 && sda_transitions >= 4) ? (sda_transitions + scl_transitions) : 0;
   int spi_transitions = (spi_sck >= 16 && spi_data >= 2) ? (spi_sck + spi_data) : 0;
 
@@ -114,7 +112,7 @@ void analyzeProtocol() {
       if(prev != curr) {
         if(last_t > 0) {
           uint32_t d = transition_times[i] - last_t;
-          if(d >= 35 && d < min_d) min_d = d;
+          if(d >= 4 && d < min_d) min_d = d;
         }
         last_t = transition_times[i];
       }
@@ -125,7 +123,7 @@ void analyzeProtocol() {
   // =========================================================================
   // 1. UART / RFID DETECTION (CH1 = GPIO36)
   // =========================================================================
-  if (max_transitions == uart_transitions && uart_transitions >= 4) {
+  if (max_transitions == uart_transitions && uart_transitions >= 2) {
     uint32_t min_diff = getMinDiff(36);
     long est_baud = (min_diff < 999999) ? (1000000 / min_diff) : 9600;
     
@@ -138,8 +136,8 @@ void analyzeProtocol() {
 
     long bit_time = 1000000 / est_baud;
 
-    // Direct Time-Sampling Function: queries the exact logic level on pin 36 at time t
-    auto getPin36At = [&](uint32_t t) -> int {
+    // Helper: query logic state of CH1 (pin 36) at any microsecond timestamp t
+    auto getCh1At = [&](uint32_t t) -> int {
       if (t < transition_times[1]) return (transition_states[0] & (1ULL<<36)) ? 1 : 0;
       for (int j = 1; j < sample_count; j++) {
         if (j == sample_count - 1 || transition_times[j+1] > t) {
@@ -153,35 +151,34 @@ void analyzeProtocol() {
     uint32_t decoded_start_times[32];
     int decoded_count = 0;
 
-    uint32_t current_t = transition_times[1];
-    uint32_t capture_end_t = transition_times[sample_count - 1];
+    // Decode stream of UART characters by locating falling edges (Start Bits)
+    for (int i = 1; i < sample_count; i++) {
+      bool prev = (transition_states[i-1] & (1ULL<<36)) ? 1 : 0;
+      bool curr = (transition_states[i] & (1ULL<<36)) ? 1 : 0;
 
-    // Decode full stream of UART characters
-    while (current_t + (9 * bit_time) <= capture_end_t && decoded_count < 32) {
-      // Verify Start Bit is LOW
-      if (getPin36At(current_t + (bit_time / 2)) == 0) {
+      // Start bit: transition from HIGH (1) to LOW (0)
+      if (prev == 1 && curr == 0) {
+        uint32_t start_t = transition_times[i];
+
+        // Skip if this falling edge is inside a character frame currently being sampled
+        if (decoded_count > 0 && start_t < decoded_start_times[decoded_count-1] + (9 * bit_time)) {
+          continue;
+        }
+
         uint8_t byte_val = 0;
-        // Sample each bit at 1.5T, 2.5T, ..., 8.5T
+        // Sample 8 data bits at exact midpoints: 1.5T, 2.5T, ..., 8.5T
         for (int b = 0; b < 8; b++) {
-          uint32_t sample_t = current_t + bit_time + (bit_time / 2) + (b * bit_time);
-          if (getPin36At(sample_t)) {
+          uint32_t sample_t = start_t + bit_time + (bit_time / 2) + (b * bit_time);
+          if (getCh1At(sample_t) == 1) {
             byte_val |= (1 << b);
           }
         }
 
-        decoded_bytes[decoded_count] = byte_val;
-        decoded_start_times[decoded_count] = current_t;
-        decoded_count++;
-
-        // Advance past 10-bit frame (1 start + 8 data + 1 stop)
-        current_t += 10 * bit_time;
-
-        // Advance to next start bit
-        while (current_t < capture_end_t && getPin36At(current_t) == 1) {
-          current_t += (bit_time / 4);
+        if (decoded_count < 32) {
+          decoded_bytes[decoded_count] = byte_val;
+          decoded_start_times[decoded_count] = start_t;
+          decoded_count++;
         }
-      } else {
-        current_t += (bit_time / 4);
       }
     }
 
@@ -226,13 +223,13 @@ void analyzeProtocol() {
       
       static String last_uart = "";
       String new_uart = String(ascii_str);
-      if (last_uart != new_uart) {
+      new_uart.trim();
+      if (last_uart != new_uart && new_uart.length() > 0) {
         lcd_busy = true;
         lcd.clear();
         lcd.print(new_uart);
         lcd.setCursor(0, 1);
-        lcd.print(est_baud);
-        lcd.print(" Baud UART");
+        lcd.print("9600 Baud UART");
         lcd_busy = false;
         last_uart = new_uart;
       }
@@ -290,7 +287,6 @@ void analyzeProtocol() {
     }
     Serial.println("]}");
     
-    // Update LCD
     static String last_i2c = "";
     String new_i2c = String(est_clock/1000) + " kHz Clock";
     if (last_i2c != new_i2c) {
@@ -357,7 +353,6 @@ void analyzeProtocol() {
     }
     Serial.println("]}");
     
-    // Update LCD
     static String last_spi = "";
     String new_spi = String(est_clock/1000) + " kHz Clock";
     if (last_spi != new_spi) {
@@ -387,8 +382,9 @@ void setup() {
   // LCD on default ESP32 I2C pins (GPIO 21 = SDA, GPIO 22 = SCL)
   Wire.begin(21, 22);
   Wire.setClock(100000);
-  
-  // Check if LCD is at address 0x27 or 0x3F
+  delay(100);
+
+  // Auto-detect LCD I2C address (0x27 or 0x3F)
   Wire.beginTransmission(0x27);
   if (Wire.endTransmission() != 0) {
     Wire.beginTransmission(0x3F);
